@@ -1,0 +1,1008 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>MIDI Controller — Phase 1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500&family=DM+Mono:wght@400;500&family=Syne:wght@700&display=swap" rel="stylesheet">
+<style>
+
+/* ═══════════════════════════════════════════════
+   TOKENS
+═══════════════════════════════════════════════ */
+:root {
+  --bg-base:              #0e0e12;
+  --bg-gradient:          radial-gradient(ellipse at 35% 25%, #17172200 0%, #0e0e12 100%),
+                          radial-gradient(ellipse at 80% 80%, #1a100800 0%, transparent 60%);
+
+  --glass-bg:             rgba(255,255,255,0.055);
+  --glass-bg-active:      rgba(255,255,255,0.09);
+  --glass-border:         rgba(255,255,255,0.09);
+  --glass-border-active:  rgba(255,255,255,0.20);
+  --glass-shadow:         0 8px 32px rgba(0,0,0,0.45), 0 1px 0 rgba(255,255,255,0.07) inset;
+  --glass-blur:           blur(14px) saturate(1.4);
+
+  --accent:               #ff4d00;
+  --accent-dim:           rgba(255,77,0,0.22);
+  --accent-glow:          0 0 14px rgba(255,77,0,0.55), 0 0 36px rgba(255,77,0,0.18);
+
+  --text-primary:         rgba(255,255,255,0.88);
+  --text-secondary:       rgba(255,255,255,0.38);
+  --text-dim:             rgba(255,255,255,0.14);
+
+  --btn-off-bg:           rgba(255,255,255,0.05);
+  --btn-off-border:       rgba(255,255,255,0.08);
+  --btn-on-bg:            rgba(255,77,0,0.20);
+  --btn-on-border:        rgba(255,77,0,0.55);
+  --btn-press-scale:      0.91;
+
+  --fader-track-bg:       rgba(255,255,255,0.07);
+  --fader-track-width:    6px;
+  --fader-handle-size:    36px;
+  --fader-handle-h:       14px;
+  --fader-handle-bg:      rgba(240,240,245,0.92);
+  --fader-handle-shadow:  0 2px 10px rgba(0,0,0,0.55), 0 1px 0 rgba(255,255,255,0.75) inset;
+  --fader-height:         200px;
+
+  --touch-min:            44px;
+  --btn-size-sm:          46px;
+  --btn-size-md:          58px;
+  --btn-size-lg:          68px;
+
+  --radius-sm:            10px;
+  --radius-md:            14px;
+  --radius-lg:            22px;
+  --radius-xl:            28px;
+  --radius-pill:          100px;
+
+  --gap-xs:   5px;
+  --gap-sm:   10px;
+  --gap-md:   16px;
+  --gap-lg:   24px;
+
+  --font-ui:      'DM Sans', system-ui, sans-serif;
+  --font-mono:    'DM Mono', monospace;
+  --font-display: 'Syne', sans-serif;
+
+  --trans-fast:   70ms ease;
+  --trans-mid:    160ms cubic-bezier(0.4,0,0.2,1);
+  --trans-spring: 280ms cubic-bezier(0.34,1.56,0.64,1);
+}
+
+/* ═══════════════════════════════════════════════
+   RESET & BASE
+═══════════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+body {
+  background: var(--bg-base);
+  background-image: var(--bg-gradient);
+  font-family: var(--font-ui);
+  color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* ═══════════════════════════════════════════════
+   LAYOUT
+═══════════════════════════════════════════════ */
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px 12px;
+  flex-shrink: 0;
+  border-bottom: 1px solid rgba(255,255,255,0.045);
+}
+
+.app-logo {
+  font-family: var(--font-display);
+  font-size: 17px;
+  letter-spacing: 0.18em;
+  color: var(--text-primary);
+}
+.app-logo span { color: var(--accent); }
+
+.app-canvas {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--gap-lg);
+  overflow: hidden;
+}
+
+.app-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
+  border-top: 1px solid rgba(255,255,255,0.04);
+  flex-shrink: 0;
+}
+
+/* ═══════════════════════════════════════════════
+   STATUS BAR
+═══════════════════════════════════════════════ */
+.status-bar { display: flex; align-items: center; gap: 8px; }
+
+.status-pill {
+  display: flex; align-items: center; gap: 7px;
+  padding: 5px 14px;
+  border-radius: var(--radius-pill);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  cursor: pointer;
+  transition: background var(--trans-mid), border-color var(--trans-mid);
+  -webkit-tap-highlight-color: transparent;
+}
+.status-pill:active { background: var(--glass-bg-active); }
+
+.status-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.18);
+  flex-shrink: 0;
+  transition: background var(--trans-mid), box-shadow var(--trans-mid);
+}
+.status-dot.connected { background: #34d399; box-shadow: 0 0 8px rgba(52,211,153,0.65); }
+.status-dot.error     { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+
+.status-text {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.07em;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  white-space: nowrap;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.port-wrap { position: relative; }
+.port-wrap::after {
+  content: '▾';
+  position: absolute;
+  right: 11px; top: 50%;
+  transform: translateY(-50%);
+  font-size: 8px; color: var(--text-secondary);
+  pointer-events: none;
+}
+.port-select {
+  appearance: none; -webkit-appearance: none;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-pill);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  padding: 5px 28px 5px 14px;
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  cursor: pointer;
+  outline: none;
+}
+
+/* ═══════════════════════════════════════════════
+   CHANNEL STRIP
+═══════════════════════════════════════════════ */
+.channel-strip {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--gap-md);
+  padding: var(--gap-lg) var(--gap-md);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-xl);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-shadow);
+  min-width: 100px;
+}
+
+/* Top highlight line */
+.channel-strip::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 20%; right: 20%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.18), transparent);
+  border-radius: var(--radius-pill);
+}
+
+.strip-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+/* ═══════════════════════════════════════════════
+   FADER
+═══════════════════════════════════════════════ */
+.midi-fader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--gap-xs);
+  touch-action: none;
+  cursor: ns-resize;
+}
+
+.fader-track-wrap {
+  position: relative;
+  width: 40px;
+  height: var(--fader-height);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fader-track {
+  width: var(--fader-track-width);
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--fader-track-bg);
+  border: 1px solid rgba(255,255,255,0.06);
+  position: relative;
+  overflow: hidden;
+}
+
+.fader-fill {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  background: linear-gradient(to top, var(--accent) 0%, rgba(255,77,0,0.35) 100%);
+  border-radius: var(--radius-pill);
+  transition: height 0.03s linear;
+  box-shadow: 0 0 10px rgba(255,77,0,0.35);
+  height: 0%;
+}
+
+.fader-handle {
+  position: absolute;
+  width: var(--fader-handle-size);
+  height: var(--fader-handle-h);
+  left: 50%;
+  transform: translateX(-50%) translateY(50%);
+  bottom: 0%;
+  border-radius: var(--radius-sm);
+  background: var(--fader-handle-bg);
+  box-shadow: var(--fader-handle-shadow);
+  display: flex; align-items: center; justify-content: center;
+  transition: bottom 0.03s linear, box-shadow var(--trans-mid);
+}
+
+.fader-handle::after {
+  content: '';
+  width: 18px; height: 2px;
+  border-radius: 1px;
+  background: rgba(0,0,0,0.18);
+}
+
+.midi-fader.is-dragging .fader-handle {
+  box-shadow: var(--fader-handle-shadow), 0 0 14px rgba(255,77,0,0.5);
+}
+
+.fader-value {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+  min-width: 28px;
+  text-align: center;
+  transition: color var(--trans-mid);
+}
+
+.midi-fader.is-dragging .fader-value { color: var(--text-secondary); }
+
+.fader-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+/* ═══════════════════════════════════════════════
+   BUTTON
+═══════════════════════════════════════════════ */
+.midi-element {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+
+.midi-btn {
+  position: relative;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--btn-off-border);
+  background: var(--btn-off-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-shadow);
+  cursor: pointer;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--btn-size-md);
+  height: var(--btn-size-md);
+  transition:
+    background var(--trans-fast),
+    border-color var(--trans-fast),
+    transform var(--trans-fast),
+    box-shadow var(--trans-fast);
+  overflow: hidden;
+}
+
+/* Glass highlight */
+.midi-btn::before {
+  content: '';
+  position: absolute; inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(150deg, rgba(255,255,255,0.09) 0%, transparent 55%);
+  pointer-events: none;
+}
+
+.midi-btn__dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.18);
+  transition: background var(--trans-fast), box-shadow var(--trans-fast), transform var(--trans-spring);
+}
+
+.midi-btn.is-on {
+  background: var(--btn-on-bg);
+  border-color: var(--btn-on-border);
+  box-shadow: var(--accent-glow), var(--glass-shadow);
+}
+
+.midi-btn.is-on .midi-btn__dot {
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  transform: scale(1.2);
+}
+
+.midi-btn.is-pressing {
+  transform: scale(var(--btn-press-scale));
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+
+/* Kill variant — smaller */
+.midi-btn--kill {
+  width: var(--btn-size-sm);
+  height: var(--btn-size-sm);
+  border-radius: var(--radius-sm);
+}
+
+/* Momentary — round */
+.midi-btn--momentary {
+  width: var(--btn-size-lg);
+  height: var(--btn-size-lg);
+  border-radius: var(--radius-pill);
+}
+
+.midi-btn--momentary.is-on {
+  transform: scale(0.95);
+}
+
+.midi-btn--momentary .midi-btn__dot {
+  width: 9px; height: 9px;
+}
+
+.btn-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  transition: color var(--trans-mid);
+  text-align: center;
+}
+
+.midi-btn.is-on ~ .btn-label,
+.midi-element:has(.midi-btn.is-on) .btn-label {
+  color: var(--accent);
+}
+
+/* Kill group */
+.kill-group {
+  display: flex;
+  gap: var(--gap-xs);
+}
+
+/* Divider */
+.strip-divider {
+  width: 100%;
+  height: 1px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 1px;
+}
+
+/* ═══════════════════════════════════════════════
+   FOOTER
+═══════════════════════════════════════════════ */
+.midi-log {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+  transition: color var(--trans-mid);
+}
+
+.midi-log.active { color: var(--text-secondary); }
+
+.footer-right {
+  display: flex; align-items: center; gap: var(--gap-sm);
+}
+
+.act-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-dim);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.midi-activity {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.14);
+  transition: background var(--trans-fast), box-shadow var(--trans-fast);
+}
+
+.midi-activity.firing {
+  background: var(--accent);
+  box-shadow: var(--accent-glow);
+}
+
+/* ═══════════════════════════════════════════════
+   OVERLAY
+═══════════════════════════════════════════════ */
+.overlay {
+  position: fixed; inset: 0;
+  background: rgba(14,14,18,0.88);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: var(--gap-lg);
+  transition: opacity 0.3s;
+}
+
+.overlay.hidden { display: none; }
+
+.overlay-card {
+  background: var(--glass-bg-active);
+  border: 1px solid var(--glass-border-active);
+  border-radius: var(--radius-xl);
+  padding: 32px 28px;
+  max-width: 300px;
+  width: 100%;
+  text-align: center;
+  box-shadow: var(--glass-shadow), 0 0 80px rgba(0,0,0,0.5);
+  position: relative;
+}
+
+.overlay-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 20%; right: 20%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+}
+
+.overlay-title {
+  font-family: var(--font-display);
+  font-size: 24px;
+  letter-spacing: 0.12em;
+  margin-bottom: 12px;
+}
+
+.overlay-body {
+  font-size: 13px;
+  line-height: 1.75;
+  color: var(--text-secondary);
+  margin-bottom: 20px;
+}
+.overlay-body strong { color: var(--text-primary); }
+
+.overlay-btn {
+  padding: 10px 32px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: #fff;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  transition: opacity var(--trans-fast), transform var(--trans-fast);
+  -webkit-tap-highlight-color: transparent;
+}
+.overlay-btn:active { opacity: 0.82; transform: scale(0.97); }
+
+.overlay-hint {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-top: 10px;
+  letter-spacing: 0.05em;
+}
+
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <div class="app-logo">MIDI<span>·</span>CTRL</div>
+  <div class="status-bar">
+    <div class="port-wrap" id="portWrap" style="display:none">
+      <select class="port-select" id="portSelect">
+        <option value="">— port —</option>
+      </select>
+    </div>
+    <div class="status-pill" id="statusPill">
+      <div class="status-dot" id="statusDot"></div>
+      <span class="status-text" id="statusText">NOT CONNECTED</span>
+    </div>
+  </div>
+</header>
+
+<main class="app-canvas" id="canvas"></main>
+
+<footer class="app-footer">
+  <div class="midi-log" id="midiLog">—</div>
+  <div class="footer-right">
+    <span class="act-label">OUT</span>
+    <div class="midi-activity" id="midiActivity"></div>
+  </div>
+</footer>
+
+<div class="overlay" id="overlay">
+  <div class="overlay-card">
+    <div class="overlay-title">MIDI CTRL</div>
+    <div class="overlay-body">
+      Requires Web MIDI API.<br><br>
+      <strong>Desktop:</strong> Chrome, Edge, Brave<br>
+      <strong>iPad:</strong> WebMIDI Browser
+    </div>
+    <button class="overlay-btn" id="overlayDismiss">Demo Mode</button>
+    <div class="overlay-hint">connect MIDI above when ready</div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════
+// TRANSPORT
+// ═══════════════════════════════════════════════
+class MIDITransport {
+  constructor() {
+    this._access = null;
+    this._output = null;
+    this._portsCallback = null;
+    this._activityCallbacks = [];
+  }
+
+  async connect() {
+    if (!navigator.requestMIDIAccess) throw new Error('No Web MIDI');
+    this._access = await navigator.requestMIDIAccess({ sysex: false });
+    this._access.onstatechange = () => {
+      if (this._portsCallback) this._portsCallback(this.getPorts());
+    };
+    return this.getPorts();
+  }
+
+  selectPort(id) {
+    this._output = this._access?.outputs.get(id) ?? null;
+    return !!this._output;
+  }
+
+  getPorts() {
+    if (!this._access) return [];
+    return Array.from(this._access.outputs.values())
+      .map(p => ({ id: p.id, name: p.name }));
+  }
+
+  onPortsChange(cb) { this._portsCallback = cb; }
+  onActivity(cb)    { this._activityCallbacks.push(cb); }
+  get isConnected() { return !!this._output; }
+
+  send(msg) {
+    if (!this._output) return;
+    const bytes = this._encode(msg);
+    if (bytes) {
+      this._output.send(bytes);
+      this._activityCallbacks.forEach(cb => cb(msg));
+    }
+  }
+
+  _encode(msg) {
+    const ch = ((msg.channel ?? 1) - 1) & 0xF;
+    switch (msg.type) {
+      case 'cc':       return [0xB0|ch, msg.cc & 0x7F, msg.value & 0x7F];
+      case 'note_on':  return [0x90|ch, msg.note & 0x7F, (msg.velocity??100) & 0x7F];
+      case 'note_off': return [0x80|ch, msg.note & 0x7F, 0];
+      default: return null;
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════
+// LAYOUT — динамическое назначение номеров
+// ═══════════════════════════════════════════════
+let _nextCC   = 70;
+let _nextNote = 36;
+const nextCC   = () => _nextCC++;
+const nextNote = () => _nextNote++;
+const uuid     = () => Math.random().toString(36).slice(2);
+
+function createFader(label = '') {
+  return { id: uuid(), type: 'fader', cc: nextCC(), channel: 1, value: 0, label };
+}
+
+function createButton(mode, label = '') {
+  return { id: uuid(), type: 'button', mode, note: nextNote(), channel: 1, state: false, label };
+}
+
+function createChannelStrip(label) {
+  return {
+    id: uuid(), label,
+    fader:   createFader(label),
+    mute:    createButton('toggle',    'mute'),
+    killLow: createButton('toggle',    'lo'),
+    killMid: createButton('toggle',    'mid'),
+    killHi:  createButton('toggle',    'hi'),
+    impulse: createButton('momentary', 'fx'),
+  };
+}
+
+const layout = { strips: [createChannelStrip('CH 1')] };
+
+// ═══════════════════════════════════════════════
+// BUTTON ELEMENT
+// ═══════════════════════════════════════════════
+class ButtonElement {
+  constructor(data, transport) {
+    this._d = data;
+    this._t = transport;
+    this._onChange = null;
+  }
+
+  onStateChange(cb) { this._onChange = cb; }
+
+  onPressStart() {
+    const d = this._d;
+    if (d.mode === 'momentary') {
+      this._set(true);
+      this._noteOn();
+    } else if (d.mode === 'toggle') {
+      this._set(!d.state);
+      d.state ? this._noteOn() : this._noteOff();
+    } else if (d.mode === 'trigger') {
+      this._noteOn();
+      setTimeout(() => this._noteOff(), 50);
+      this._set(true);
+      setTimeout(() => this._set(false), 90);
+    }
+  }
+
+  onPressEnd() {
+    if (this._d.mode === 'momentary') {
+      this._set(false);
+      this._noteOff();
+    }
+  }
+
+  _noteOn()  { this._t.send({ type: 'note_on',  channel: this._d.channel, note: this._d.note, velocity: 100 }); }
+  _noteOff() { this._t.send({ type: 'note_off', channel: this._d.channel, note: this._d.note }); }
+
+  _set(v) {
+    this._d.state = v;
+    if (this._onChange) this._onChange(v);
+  }
+}
+
+// ═══════════════════════════════════════════════
+// FADER ELEMENT
+// ═══════════════════════════════════════════════
+class FaderElement {
+  constructor(data, transport) {
+    this._d = data;
+    this._t = transport;
+    this._onChange = null;
+    this._active = false;
+    this._rect = null;
+  }
+
+  onValueChange(cb) { this._onChange = cb; }
+  get position() { return this._d.value / 127; }
+
+  dragStart(clientY, trackEl) {
+    this._active = true;
+    this._rect = trackEl.getBoundingClientRect();
+    this._calc(clientY);
+  }
+
+  dragMove(clientY) {
+    if (!this._active) return;
+    this._calc(clientY);
+  }
+
+  dragEnd() { this._active = false; }
+
+  _calc(clientY) {
+    const ratio = 1 - Math.max(0, Math.min(1,
+      (clientY - this._rect.top) / this._rect.height
+    ));
+    const val = Math.round(ratio * 127);
+    if (val === this._d.value) return;
+    this._d.value = val;
+    this._t.send({ type: 'cc', channel: this._d.channel, cc: this._d.cc, value: val });
+    if (this._onChange) this._onChange(val);
+  }
+}
+
+// ═══════════════════════════════════════════════
+// CANVAS RENDERER
+// ═══════════════════════════════════════════════
+function renderCanvas(rootEl, layout, transport) {
+  rootEl.innerHTML = '';
+
+  for (const strip of layout.strips) {
+    rootEl.appendChild(renderStrip(strip, transport));
+  }
+}
+
+function renderStrip(strip, transport) {
+  const el = document.createElement('div');
+  el.className = 'channel-strip';
+
+  el.appendChild(renderFader(strip.fader, transport));
+  el.appendChild(mkDivider());
+  el.appendChild(renderButton(strip.mute, transport));
+  el.appendChild(mkDivider());
+
+  const kills = document.createElement('div');
+  kills.className = 'kill-group';
+  kills.appendChild(renderButton(strip.killLow, transport, 'kill'));
+  kills.appendChild(renderButton(strip.killMid, transport, 'kill'));
+  kills.appendChild(renderButton(strip.killHi,  transport, 'kill'));
+  el.appendChild(kills);
+
+  el.appendChild(mkDivider());
+  el.appendChild(renderButton(strip.impulse, transport, 'momentary'));
+
+  const lbl = document.createElement('div');
+  lbl.className = 'strip-label';
+  lbl.textContent = strip.label;
+  el.appendChild(lbl);
+
+  return el;
+}
+
+function mkDivider() {
+  const d = document.createElement('div');
+  d.className = 'strip-divider';
+  return d;
+}
+
+// ── Fader renderer ────────────────────────────
+function renderFader(data, transport) {
+  const inst = new FaderElement(data, transport);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'midi-fader';
+  wrap.innerHTML = `
+    <div class="fader-track-wrap">
+      <div class="fader-track">
+        <div class="fader-fill"></div>
+      </div>
+      <div class="fader-handle"></div>
+    </div>
+    <div class="fader-value">0</div>
+    <div class="fader-label">${data.label}</div>
+  `;
+
+  const trackEl  = wrap.querySelector('.fader-track');
+  const fillEl   = wrap.querySelector('.fader-fill');
+  const handleEl = wrap.querySelector('.fader-handle');
+  const valueEl  = wrap.querySelector('.fader-value');
+
+  function updateVisual(value) {
+    const pct = (value / 127) * 100;
+    fillEl.style.height = pct + '%';
+    // handle position: bottom of track + offset
+    const handleH = parseInt(getComputedStyle(document.documentElement)
+      .getPropertyValue('--fader-handle-h')) || 14;
+    handleEl.style.bottom = `calc(${pct}% - ${handleH / 2}px)`;
+    valueEl.textContent = value;
+  }
+
+  inst.onValueChange(updateVisual);
+  updateVisual(data.value);
+
+  const onStart = (e) => {
+    e.preventDefault();
+    const y = e.touches ? e.touches[0].clientY : e.clientY;
+    inst.dragStart(y, trackEl);
+    wrap.classList.add('is-dragging');
+
+    const onMove = (e) => {
+      e.preventDefault();
+      inst.dragMove(e.touches ? e.touches[0].clientY : e.clientY);
+    };
+    const onEnd = () => {
+      inst.dragEnd();
+      wrap.classList.remove('is-dragging');
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup',   onEnd);
+      document.removeEventListener('touchmove', onMove);
+      document.removeEventListener('touchend',  onEnd);
+    };
+
+    document.addEventListener('mousemove', onMove, { passive: false });
+    document.addEventListener('mouseup',   onEnd);
+    document.addEventListener('touchmove', onMove, { passive: false });
+    document.addEventListener('touchend',  onEnd);
+  };
+
+  wrap.querySelector('.fader-track-wrap')
+    .addEventListener('mousedown',  onStart);
+  wrap.querySelector('.fader-track-wrap')
+    .addEventListener('touchstart', onStart, { passive: false });
+
+  return wrap;
+}
+
+// ── Button renderer ───────────────────────────
+function renderButton(data, transport, variant = '') {
+  const inst = new ButtonElement(data, transport);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'midi-element';
+
+  const btn = document.createElement('div');
+  const varClass = variant ? ` midi-btn--${variant}` : '';
+  btn.className = `midi-btn${varClass}`;
+  btn.innerHTML = `<div class="midi-btn__dot"></div>`;
+
+  const lbl = document.createElement('div');
+  lbl.className = 'btn-label';
+  lbl.textContent = data.label;
+
+  wrap.appendChild(btn);
+  wrap.appendChild(lbl);
+
+  inst.onStateChange((state) => {
+    btn.classList.toggle('is-on', state);
+    lbl.style.color = state ? 'var(--accent)' : '';
+  });
+
+  const pressStart = (e) => {
+    e.preventDefault();
+    btn.classList.add('is-pressing');
+    inst.onPressStart();
+  };
+  const pressEnd = () => {
+    btn.classList.remove('is-pressing');
+    inst.onPressEnd();
+  };
+
+  btn.addEventListener('mousedown',   pressStart);
+  btn.addEventListener('touchstart',  pressStart, { passive: false });
+  btn.addEventListener('mouseup',     pressEnd);
+  btn.addEventListener('mouseleave',  pressEnd);
+  btn.addEventListener('touchend',    pressEnd);
+  btn.addEventListener('touchcancel', pressEnd);
+
+  return wrap;
+}
+
+// ═══════════════════════════════════════════════
+// APP BOOT
+// ═══════════════════════════════════════════════
+const transport    = new MIDITransport();
+const canvasEl     = document.getElementById('canvas');
+const overlay      = document.getElementById('overlay');
+const statusDot    = document.getElementById('statusDot');
+const statusText   = document.getElementById('statusText');
+const portSelect   = document.getElementById('portSelect');
+const portWrap     = document.getElementById('portWrap');
+const midiLog      = document.getElementById('midiLog');
+const activityEl   = document.getElementById('midiActivity');
+
+renderCanvas(canvasEl, layout, transport);
+
+// Status helpers
+function setStatus(text, type) {
+  statusText.textContent = text;
+  statusDot.className = 'status-dot' + (type ? ` ${type}` : '');
+}
+
+// Port management
+function populatePorts(ports) {
+  portSelect.innerHTML = '<option value="">— port —</option>';
+  ports.forEach(p => {
+    const o = document.createElement('option');
+    o.value = p.id; o.textContent = p.name;
+    portSelect.appendChild(o);
+  });
+  portWrap.style.display = ports.length ? 'block' : 'none';
+  if (ports.length && !transport.isConnected) {
+    portSelect.value = ports[0].id;
+    transport.selectPort(ports[0].id);
+    setStatus(ports[0].name, 'connected');
+  }
+}
+
+portSelect.addEventListener('change', () => {
+  const id   = portSelect.value;
+  const name = portSelect.options[portSelect.selectedIndex]?.text;
+  if (id) { transport.selectPort(id); setStatus(name, 'connected'); }
+});
+
+// Activity LED
+let actTimer;
+transport.onActivity((msg) => {
+  activityEl.classList.add('firing');
+  clearTimeout(actTimer);
+  actTimer = setTimeout(() => activityEl.classList.remove('firing'), 100);
+
+  const label = msg.type === 'cc'
+    ? `CC${msg.cc} → ${msg.value}`
+    : `NOTE ${msg.type === 'note_on' ? 'ON' : 'OFF'} ${msg.note}`;
+  midiLog.textContent = label;
+  midiLog.classList.add('active');
+  clearTimeout(midiLog._t);
+  midiLog._t = setTimeout(() => midiLog.classList.remove('active'), 1500);
+});
+
+// Connect
+async function connectMIDI() {
+  try {
+    const ports = await transport.connect();
+    setStatus('MIDI READY', 'connected');
+    overlay.classList.add('hidden');
+    populatePorts(ports);
+    transport.onPortsChange(populatePorts);
+  } catch {
+    setStatus('NO MIDI API', 'error');
+  }
+}
+
+document.getElementById('overlayDismiss').addEventListener('click', () => {
+  overlay.classList.add('hidden');
+  setStatus('DEMO MODE', '');
+});
+
+if (navigator.requestMIDIAccess) {
+  overlay.classList.add('hidden');
+  connectMIDI();
+} else {
+  setStatus('NO MIDI API', 'error');
+}
+</script>
+</body>
+</html>

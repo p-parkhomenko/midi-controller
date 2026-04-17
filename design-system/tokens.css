@@ -1,0 +1,22 @@
+:root {
+  --bg:              #080808;
+  --accent:          #ff4d00;
+  --accent-dim:      rgba(255,77,0,0.3);
+  --accent-glow:     rgba(255,77,0,0.8);
+
+  --text-primary:    rgba(255,255,255,0.85);
+  --text-secondary:  rgba(255,255,255,0.55);
+  --text-dim:        rgba(255,255,255,0.25);
+  --text-micro:      rgba(255,255,255,0.08);
+
+  --border-subtle:   rgba(255,255,255,0.08);
+  --border-light:    rgba(255,255,255,0.15);
+
+  --font-mono:     'Share Tech Mono', monospace;
+  --font-display:  'Chakra Petch', sans-serif;
+  --font-orbitron: 'Orbitron', sans-serif;
+  --font-bitcount: 'Bitcount Grid Single', monospace;
+
+  --trans-fast: 40ms ease;
+  --trans-mid:  160ms ease;
+}

@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>MIDI CTRL — Phase 1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Share+Tech+Mono&family=Orbitron:wght@400;500;600;700;800;900&family=Bitcount+Grid+Single:wght@100..900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="design-system/tokens.css">
+<link rel="stylesheet" href="design-system/elements.css">
+</head>
+<body>
+
+<div class="val-overlay" id="valOverlay">
+  <div class="val-num" id="valNum">000</div>
+  <div class="val-hint" id="valHint"></div>
+</div>
+
+<div class="scene">
+  <div class="dot-bg"></div>
+  <div class="scanlines"></div>
+  <div class="noise"></div>
+  <div class="bg-pulse" id="bgPulse"></div>
+
+  <div class="anno anno--tl">SYS:WEBMIDI/1.0<br>PROTOCOL:RTP</div>
+  <div class="anno anno--tr">LAYOUT:FIXED<br>GRID:24×24</div>
+  <div class="anno anno--bl">CC:070-119<br>NOTE:036-127</div>
+  <div class="anno anno--br">DEVICE:001<br>CH:01/16</div>
+
+  <header class="hdr">
+    <div class="logo">
+      <span class="logo-mark">MIDI<span class="logo-dot">·</span>CTRL</span>
+      <span class="logo-sub">PHASE·1</span>
+      <span class="logo-jp">コントローラ</span>
+    </div>
+    <div class="hdr-center">
+      <div class="bpm">
+        <div class="bpm-led"></div>
+        <span class="bpm-num">128</span>
+        <span>BPM</span>
+      </div>
+    </div>
+    <div class="hdr-right">
+      <select class="port-select" id="portSelect" style="display:none">
+        <option value="">— port —</option>
+      </select>
+      <div class="conn" id="conn">
+        <div class="conn-dot" id="connDot"></div>
+        <span id="connText">NO MIDI</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="cvs" id="canvas"></main>
+
+  <footer class="ftr">
+    <div class="log" id="log">— READY —</div>
+    <div class="ftr-jp">出力</div>
+    <div class="act-wrap">
+      <span class="act-lbl">TX OUT</span>
+      <div class="act" id="actLed"></div>
+    </div>
+  </footer>
+</div>
+
+<div class="midi-overlay hidden" id="midiOverlay">
+  <div class="midi-overlay-card">
+    <div class="midi-overlay-title">MIDI CTRL</div>
+    <div class="midi-overlay-body">
+      Requires Web MIDI API.<br><br>
+      <strong>Desktop:</strong> Chrome, Edge, Brave<br>
+      <strong>iPad:</strong> WebMIDI Browser
+    </div>
+    <button class="midi-overlay-btn" id="overlayDismiss">DEMO MODE</button>
+  </div>
+</div>
+
+<script type="module">
+import MIDITransport from './core/transport.js';
+import { layout }    from './core/layout.js';
+import { renderCanvas } from './ui/canvas.js';
+
+const transport  = new MIDITransport();
+const canvasEl   = document.getElementById('canvas');
+const connDot    = document.getElementById('connDot');
+const connText   = document.getElementById('connText');
+const portSelect = document.getElementById('portSelect');
+const logEl      = document.getElementById('log');
+const actLed     = document.getElementById('actLed');
+const bgPulse    = document.getElementById('bgPulse');
+const valOverlay = document.getElementById('valOverlay');
+const valNumEl   = document.getElementById('valNum');
+const valHintEl  = document.getElementById('valHint');
+const overlay    = document.getElementById('midiOverlay');
+
+let hideT = null, pulseT = null, actT = null, logT = null;
+
+const ui = {
+  showVal(v, hint) {
+    valNumEl.textContent  = typeof v === 'number' ? String(v).padStart(3, '0') : v;
+    valHintEl.textContent = hint || '';
+    valOverlay.classList.add('visible');
+    clearTimeout(hideT);
+  },
+  hideVal() {
+    clearTimeout(hideT);
+    hideT = setTimeout(() => valOverlay.classList.remove('visible'), 200);
+  },
+  pulseStart() {
+    bgPulse.classList.add('active');
+    clearTimeout(pulseT);
+  },
+  pulseEnd() {
+    clearTimeout(pulseT);
+    pulseT = setTimeout(() => bgPulse.classList.remove('active'), 200);
+  },
+};
+
+renderCanvas(canvasEl, layout, transport, ui);
+
+transport.onActivity((msg) => {
+  actLed.classList.add('on');
+  clearTimeout(actT);
+  actT = setTimeout(() => actLed.classList.remove('on'), 100);
+
+  const label = msg.type === 'cc'
+    ? `CC${msg.cc} → ${msg.value}`
+    : `NOTE ${msg.type === 'note_on' ? 'ON' : 'OFF'} ${msg.note}`;
+  logEl.textContent = label;
+  clearTimeout(logT);
+  logT = setTimeout(() => { logEl.textContent = '— READY —'; }, 1500);
+});
+
+function setStatus(text, state) {
+  connText.textContent = text;
+  connDot.className = 'conn-dot' + (state ? ` ${state}` : '');
+}
+
+function populatePorts(ports) {
+  portSelect.innerHTML = '<option value="">— port —</option>';
+  ports.forEach(p => {
+    const o = document.createElement('option');
+    o.value = p.id; o.textContent = p.name;
+    portSelect.appendChild(o);
+  });
+  portSelect.style.display = ports.length ? 'block' : 'none';
+  if (ports.length && !transport.isConnected) {
+    portSelect.value = ports[0].id;
+    transport.selectPort(ports[0].id);
+    setStatus(ports[0].name, 'connected');
+  }
+}
+
+portSelect.addEventListener('change', () => {
+  const id   = portSelect.value;
+  const name = portSelect.options[portSelect.selectedIndex]?.text;
+  if (id) { transport.selectPort(id); setStatus(name, 'connected'); }
+});
+
+async function connectMIDI() {
+  try {
+    const ports = await transport.connect();
+    setStatus('READY', 'connected');
+    overlay.classList.add('hidden');
+    populatePorts(ports);
+    transport.onPortsChange(populatePorts);
+  } catch {
+    setStatus('NO MIDI', 'error');
+    overlay.classList.remove('hidden');
+  }
+}
+
+document.getElementById('overlayDismiss').addEventListener('click', () => {
+  overlay.classList.add('hidden');
+  setStatus('DEMO', '');
+});
+
+if (navigator.requestMIDIAccess) {
+  overlay.classList.add('hidden');
+  connectMIDI();
+} else {
+  setStatus('NO MIDI', 'error');
+}
+</script>
+</body>
+</html>

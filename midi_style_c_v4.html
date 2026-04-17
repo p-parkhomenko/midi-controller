@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>MIDI CTRL — C · Font Explorer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@300;400&family=Space+Mono:wght@400;700&family=Bitcount+Grid+Single:wght@100..900&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; touch-action: none; -webkit-user-select: none; user-select: none; background: #0c0c0c; }
+
+/* ── SCENE ── */
+.scene { width: 100%; height: 100%; display: flex; flex-direction: column; font-family: 'Space Mono', monospace; color: rgba(255,255,255,0.85); position: relative; background: #0c0c0c; }
+.dot-bg { position: absolute; inset: 0; pointer-events: none; z-index: 0; background-image: radial-gradient(circle, rgba(255,255,255,0.07) 1px, transparent 1px); background-size: 20px 20px; }
+.bg-pulse { position: absolute; inset: 0; pointer-events: none; z-index: 1; opacity: 0; transition: opacity 0.07s ease; background: radial-gradient(ellipse at 0% 50%, rgba(255,77,0,0.2) 0%, transparent 38%), radial-gradient(ellipse at 100% 50%, rgba(255,77,0,0.2) 0%, transparent 38%), radial-gradient(ellipse at 50% 0%, rgba(255,77,0,0.14) 0%, transparent 35%), radial-gradient(ellipse at 50% 100%, rgba(255,77,0,0.14) 0%, transparent 35%); }
+.bg-pulse.active { opacity: 1; }
+
+/* ── VALUE OVERLAY ──
+   ВАЖНО: mix-blend-mode на самом контейнере.
+   Никакого opacity на контейнере — это создаёт stacking context и ломает blend.
+   Показ/скрытие через visibility. ── */
+.val-overlay {
+  position: fixed; inset: 0; z-index: 9000;
+  pointer-events: none;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 10px;
+  mix-blend-mode: difference;
+  visibility: hidden;
+  transition: visibility 0s linear 0.4s;
+}
+.val-overlay.visible {
+  visibility: visible;
+  transition: visibility 0s linear 0s;
+}
+
+/* Fade на детях — blend mode на контейнере не трогаем */
+.val-overlay .val-num,
+.val-overlay .val-hint {
+  opacity: 0;
+  transition: opacity 0.4s ease-out;
+}
+.val-overlay.visible .val-num,
+.val-overlay.visible .val-hint {
+  opacity: 1;
+  transition: opacity 0.4s ease-out;
+}
+
+.val-num {
+  font-family: 'Bitcount Grid Single', monospace;
+  font-size: 192px;
+  font-weight: 900;
+  font-variation-settings: 'wght' 900;
+  line-height: 1;
+  letter-spacing: -5px;
+  color: rgb(255, 180, 0);
+  min-width: 3ch;
+  text-align: center;
+  /* НЕТ mix-blend-mode здесь — он на родителе */
+}
+.val-hint {
+  font-family: 'Space Mono', monospace;
+  font-size: 11px; letter-spacing: 0.14em;
+  color: rgba(255,255,255,0.6);
+  text-transform: uppercase;
+}
+
+/* ── HEADER ── */
+.hdr { display: flex; align-items: center; justify-content: space-between; padding: 13px 18px 11px; flex-shrink: 0; border-bottom: 1px solid rgba(255,255,255,0.1); position: relative; z-index: 2; }
+.logo { font-family: 'Unbounded', sans-serif; font-size: 11px; font-weight: 400; letter-spacing: 0.28em; color: rgba(255,255,255,0.7); text-transform: uppercase; }
+.logo em { color: #ff4d00; font-style: normal; }
+.bpm { display: flex; align-items: center; gap: 8px; font-family: 'Space Mono', monospace; font-size: 11px; letter-spacing: 0.06em; color: rgba(255,77,0,0.7); }
+.bpm-led { width: 5px; height: 5px; border-radius: 50%; background: #ff4d00; box-shadow: 0 0 6px #ff4d00; animation: ledBeat 468ms ease-out infinite; }
+@keyframes ledBeat { 0%,100% { transform:scale(1);opacity:1; } 50% { transform:scale(0.3);opacity:0.2; } }
+.conn { display: flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 3px; border: 1px solid rgba(255,255,255,0.12); font-size: 9px; letter-spacing: 0.1em; color: rgba(255,255,255,0.3); text-transform: uppercase; }
+.conn-dot { width: 5px; height: 5px; border-radius: 50%; background: #34d399; }
+
+/* ── CANVAS ── */
+.cvs { flex: 1; display: flex; align-items: center; justify-content: center; padding: 20px; position: relative; z-index: 2; }
+
+/* ── STRIP ── */
+.strip { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 18px 14px; background: #161616; border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; position: relative; min-width: 96px; }
+.strip-lbl { font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; color: rgba(255,255,255,0.25); }
+.divider { width: 100%; height: 1px; background: rgba(255,255,255,0.07); }
+
+/* ── FADER ── */
+.fader { display: flex; flex-direction: column; align-items: center; gap: 5px; touch-action: none; cursor: ns-resize; }
+.fader-wrap { position: relative; width: 40px; height: 200px; display: flex; align-items: center; justify-content: center; }
+.fader-track { width: 3px; height: 100%; background: rgba(255,255,255,0.07); border-radius: 100px; position: relative; overflow: hidden; }
+.fader-fill { position: absolute; bottom: 0; left: 0; right: 0; height: 0%; background: #ff4d00; border-radius: 100px; transition: height 0.03s linear; }
+.fader-handle { position: absolute; bottom: 0%; left: 50%; transform: translateX(-50%) translateY(50%); width: 40px; height: 14px; border-radius: 3px; background: rgba(255,255,255,0.9); display: flex; align-items: center; justify-content: center; gap: 4px; transition: bottom 0.03s linear; }
+.fader-handle::before, .fader-handle::after { content: ''; width: 1px; height: 6px; background: rgba(0,0,0,0.25); border-radius: 1px; }
+.fader-val { font-size: 9px; color: rgba(255,255,255,0.25); letter-spacing: 0.04em; min-width: 28px; text-align: center; }
+.fader-lbl { font-size: 8px; color: rgba(255,255,255,0.22); letter-spacing: 0.12em; text-transform: uppercase; }
+
+/* ── BUTTONS ── */
+.mel { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.mbtn { position: relative; cursor: pointer; touch-action: none; -webkit-tap-highlight-color: transparent; display: flex; align-items: center; justify-content: center; width: 56px; height: 56px; border-radius: 4px; background: #1c1c1c; border: 1px solid rgba(255,255,255,0.1); transition: all 55ms ease; }
+.mbtn.is-on { background: #ff4d00; border-color: #ff4d00; }
+.mbtn.is-pressing { transform: scale(0.91); }
+.mbtn-dot { width: 7px; height: 7px; border-radius: 1px; background: rgba(255,255,255,0.15); transition: all 55ms ease; }
+.mbtn.is-on .mbtn-dot { background: rgba(0,0,0,0.55); border-radius: 50%; }
+.mbtn--kill { width: 44px; height: 44px; border-radius: 3px; }
+.mbtn--momentary { width: 64px; height: 64px; border-radius: 4px; background-image: radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 1px); background-size: 8px 8px; background-color: #1c1c1c; }
+.mbtn--momentary.is-on { background: #ff4d00; background-image: none; }
+.kill-group { display: flex; gap: 4px; }
+.blbl { font-size: 8px; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,0.2); transition: color 100ms; text-align: center; }
+.mbtn.is-on ~ .blbl { color: #ff4d00; }
+
+/* ── FOOTER ── */
+.ftr { display: flex; align-items: center; justify-content: space-between; padding: 9px 18px; border-top: 1px solid rgba(255,255,255,0.08); position: relative; z-index: 2; flex-shrink: 0; }
+.log { font-size: 9px; color: rgba(255,255,255,0.2); letter-spacing: 0.05em; }
+.act-wrap { display: flex; align-items: center; gap: 6px; }
+.act-lbl { font-size: 8px; color: rgba(255,255,255,0.2); letter-spacing: 0.1em; text-transform: uppercase; }
+.act { width: 5px; height: 5px; border-radius: 1px; background: rgba(255,255,255,0.1); transition: all 65ms ease; }
+.act.on { background: #ff4d00; }
+
+/* ── FONT PANEL ── */
+.font-panel {
+  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+  z-index: 9999; width: min(320px, calc(100vw - 32px));
+  background: rgba(16,16,16,0.97); border: 1px solid rgba(255,255,255,0.11);
+  border-radius: 14px; overflow: hidden;
+  backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+  box-shadow: 0 8px 40px rgba(0,0,0,0.65);
+  touch-action: auto;
+}
+.fp-tab { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; cursor: pointer; border-bottom: 1px solid rgba(255,255,255,0.07); touch-action: auto; -webkit-tap-highlight-color: transparent; }
+.fp-tab-left { display: flex; align-items: center; gap: 8px; }
+.fp-tab-title { font-family: 'Space Mono', monospace; font-size: 9px; letter-spacing: 0.12em; color: rgba(255,255,255,0.35); text-transform: uppercase; }
+.fp-preview-small { font-family: 'Bitcount Grid Single', monospace; font-size: 14px; color: rgba(255,77,0,0.8); letter-spacing: -1px; font-variation-settings: 'wght' 900; }
+.fp-arrow { font-size: 10px; color: rgba(255,255,255,0.25); transition: transform 0.18s; }
+.font-panel.collapsed .fp-arrow { transform: rotate(180deg); }
+.fp-body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 10px; }
+.font-panel.collapsed .fp-body { display: none; }
+.fp-row { display: flex; align-items: center; gap: 10px; touch-action: auto; }
+.fp-label { font-family: 'Space Mono', monospace; font-size: 9px; letter-spacing: 0.07em; color: rgba(255,255,255,0.3); text-transform: uppercase; width: 52px; flex-shrink: 0; }
+.fp-slider { flex: 1; -webkit-appearance: none; appearance: none; height: 3px; border-radius: 2px; background: rgba(255,255,255,0.1); outline: none; cursor: pointer; touch-action: auto; }
+.fp-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%; background: #ff4d00; box-shadow: 0 0 8px rgba(255,77,0,0.45); cursor: pointer; }
+.fp-slider::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: #ff4d00; border: none; cursor: pointer; }
+.fp-val { font-family: 'Space Mono', monospace; font-size: 10px; color: rgba(255,255,255,0.5); min-width: 40px; text-align: right; }
+.fp-sep { height: 1px; background: rgba(255,255,255,0.06); }
+.fp-group-label { font-family: 'Space Mono', monospace; font-size: 8px; letter-spacing: 0.1em; color: rgba(255,255,255,0.22); text-transform: uppercase; margin-bottom: -4px; }
+.fp-chips { display: flex; gap: 4px; flex-wrap: wrap; touch-action: auto; }
+.fp-chip { padding: 4px 10px; border-radius: 100px; border: 1px solid rgba(255,255,255,0.09); background: transparent; color: rgba(255,255,255,0.28); font-family: 'Space Mono', monospace; font-size: 8px; letter-spacing: 0.04em; cursor: pointer; transition: all 0.12s; touch-action: auto; -webkit-tap-highlight-color: transparent; white-space: nowrap; }
+.fp-chip.active { background: rgba(255,77,0,0.15); border-color: rgba(255,77,0,0.4); color: #ff4d00; }
+</style>
+</head>
+<body>
+
+<!-- Value overlay: mix-blend-mode здесь, не на детях -->
+<div class="val-overlay" id="valOverlay">
+  <div class="val-num" id="valNum">000</div>
+  <div class="val-hint" id="valHint">CC 70</div>
+</div>
+
+<div class="scene">
+  <div class="dot-bg"></div>
+  <div class="bg-pulse" id="bgPulse"></div>
+  <header class="hdr">
+    <div class="logo">MIDI<em>·</em>CTRL</div>
+    <div class="bpm"><div class="bpm-led"></div><span>128 BPM</span></div>
+    <div class="conn"><div class="conn-dot"></div>RTP-MIDI</div>
+  </header>
+  <main class="cvs"><div class="strip" id="strip"></div></main>
+  <footer class="ftr">
+    <div class="log" id="log">— touch any element —</div>
+    <div class="act-wrap"><span class="act-lbl">TX</span><div class="act" id="actLed"></div></div>
+  </footer>
+</div>
+
+<!-- Font panel -->
+<div class="font-panel" id="fontPanel">
+  <div class="fp-tab" id="fpTab">
+    <div class="fp-tab-left">
+      <span class="fp-preview-small" id="fpPreview">0123</span>
+      <span class="fp-tab-title" id="fpTitle">Bitcount Grid Single</span>
+    </div>
+    <span class="fp-arrow">▾</span>
+  </div>
+  <div class="fp-body">
+    <div class="fp-row">
+      <span class="fp-label">SIZE</span>
+      <input class="fp-slider" type="range" id="slSize" min="40" max="200" step="4" value="200">
+      <span class="fp-val" id="outSize">200px</span>
+    </div>
+    <div class="fp-row">
+      <span class="fp-label">WEIGHT</span>
+      <input class="fp-slider" type="range" id="slWeight" min="100" max="900" step="50" value="900">
+      <span class="fp-val" id="outWeight">900</span>
+    </div>
+    <div class="fp-row">
+      <span class="fp-label">TRACKING</span>
+      <input class="fp-slider" type="range" id="slTracking" min="-10" max="20" step="1" value="-5">
+      <span class="fp-val" id="outTracking">-5px</span>
+    </div>
+    <div class="fp-sep"></div>
+    <div class="fp-group-label">Variant</div>
+    <div class="fp-chips" id="variantChips">
+      <button class="fp-chip active" data-f="Bitcount Grid Single">Grid Single</button>
+      <button class="fp-chip" data-f="Bitcount Grid Double">Grid Double</button>
+      <button class="fp-chip" data-f="Bitcount Prop Single">Prop Single</button>
+      <button class="fp-chip" data-f="Bitcount Prop Double">Prop Double</button>
+      <button class="fp-chip" data-f="Bitcount Mono Single">Mono Single</button>
+    </div>
+    <div class="fp-sep"></div>
+    <div class="fp-group-label">Blend mode</div>
+    <div class="fp-chips" id="blendChips">
+      <button class="fp-chip" data-b="difference">difference</button>
+      <button class="fp-chip" data-b="exclusion">exclusion</button>
+      <button class="fp-chip" data-b="normal">normal</button>
+      <button class="fp-chip" data-b="overlay">overlay</button>
+      <button class="fp-chip" data-b="hard-light">hard-light</button>
+      <button class="fp-chip active" data-b="color-dodge">color-dodge</button>
+      <button class="fp-chip" data-b="screen">screen</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Все DOM-ссылки в одном месте, ДО любых вызовов функций ────────────
+const valOverlay = document.getElementById('valOverlay');
+const valNumEl   = document.getElementById('valNum');
+const valHintEl  = document.getElementById('valHint');
+const bgPulse    = document.getElementById('bgPulse');
+const logEl      = document.getElementById('log');
+const actLed     = document.getElementById('actLed');
+const fpPreview  = document.getElementById('fpPreview');
+const fpTitle    = document.getElementById('fpTitle');
+const fpTab      = document.getElementById('fpTab');
+
+// ── Font state — твои настройки ────────────────────────────────────────
+let fSize    = 200;
+let fWeight  = 900;
+let fTracking = -5;
+let fFamily  = 'Bitcount Grid Single';
+let fBlend   = 'color-dodge';
+
+const loadedFonts = new Set(['Bitcount Grid Single']);
+
+function loadFont(fam) {
+  if (loadedFonts.has(fam)) return;
+  loadedFonts.add(fam);
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = `https://fonts.googleapis.com/css2?family=${fam.replace(/ /g,'+')}:wght@100..900&display=swap`;
+  document.head.appendChild(link);
+}
+
+function applyFont() {
+  // Font props на тексте
+  valNumEl.style.fontFamily          = `'${fFamily}', monospace`;
+  valNumEl.style.fontSize            = fSize + 'px';
+  valNumEl.style.fontWeight          = fWeight;
+  valNumEl.style.letterSpacing       = fTracking + 'px';
+  valNumEl.style.fontVariationSettings = `'wght' ${fWeight}`;
+
+  // Blend mode на КОНТЕЙНЕРЕ — единственное правильное место
+  valOverlay.style.mixBlendMode = fBlend;
+
+  // Preview в панели
+  fpPreview.style.fontFamily           = `'${fFamily}', monospace`;
+  fpPreview.style.fontVariationSettings = `'wght' ${fWeight}`;
+  fpTitle.textContent                  = fFamily;
+}
+
+// ── Sliders ────────────────────────────────────────────────────────────
+document.getElementById('slSize').addEventListener('input', function() {
+  fSize = +this.value;
+  document.getElementById('outSize').textContent = fSize + 'px';
+  applyFont();
+});
+document.getElementById('slWeight').addEventListener('input', function() {
+  fWeight = +this.value;
+  document.getElementById('outWeight').textContent = fWeight;
+  applyFont();
+});
+document.getElementById('slTracking').addEventListener('input', function() {
+  fTracking = +this.value;
+  document.getElementById('outTracking').textContent = fTracking + 'px';
+  applyFont();
+});
+
+// ── Variant chips ──────────────────────────────────────────────────────
+document.getElementById('variantChips').addEventListener('click', e => {
+  const c = e.target.closest('.fp-chip'); if (!c) return;
+  document.querySelectorAll('#variantChips .fp-chip').forEach(x => x.classList.remove('active'));
+  c.classList.add('active');
+  fFamily = c.dataset.f;
+  loadFont(fFamily);
+  applyFont();
+});
+
+// ── Blend chips ────────────────────────────────────────────────────────
+document.getElementById('blendChips').addEventListener('click', e => {
+  const c = e.target.closest('.fp-chip'); if (!c) return;
+  document.querySelectorAll('#blendChips .fp-chip').forEach(x => x.classList.remove('active'));
+  c.classList.add('active');
+  fBlend = c.dataset.b;
+  applyFont();
+});
+
+// ── Collapse ───────────────────────────────────────────────────────────
+fpTab.addEventListener('click', () => {
+  document.getElementById('fontPanel').classList.toggle('collapsed');
+});
+
+// ── Apply initial font ─────────────────────────────────────────────────
+applyFont();
+
+// ── Value overlay ──────────────────────────────────────────────────────
+let hideT = null, pulseT = null, actT = null;
+
+function showVal(v, h) {
+  valNumEl.textContent  = typeof v === 'number' ? String(v).padStart(3,'0') : v;
+  valHintEl.textContent = h || '';
+  valOverlay.classList.add('visible');
+  clearTimeout(hideT);
+}
+
+function hideVal() {
+  clearTimeout(hideT);
+  hideT = setTimeout(() => valOverlay.classList.remove('visible'), 180);
+}
+
+// ── Pulse ──────────────────────────────────────────────────────────────
+function pulse(hold) {
+  bgPulse.classList.add('active');
+  clearTimeout(pulseT);
+  if (!hold) pulseT = setTimeout(() => bgPulse.classList.remove('active'), 320);
+}
+function relPulse() {
+  pulseT = setTimeout(() => bgPulse.classList.remove('active'), 220);
+}
+
+// ── Activity ───────────────────────────────────────────────────────────
+function flash(m) {
+  actLed.classList.add('on');
+  logEl.textContent = m;
+  clearTimeout(actT);
+  actT = setTimeout(() => actLed.classList.remove('on'), 110);
+}
+
+// ── Strip ──────────────────────────────────────────────────────────────
+const root = document.getElementById('strip');
+root.appendChild(makeFader());
+root.appendChild(mkD());
+root.appendChild(makeBtn('toggle', '', 'mute'));
+root.appendChild(mkD());
+const kg = document.createElement('div'); kg.className = 'kill-group';
+['lo','mid','hi'].forEach(l => kg.appendChild(makeBtn('toggle', 'kill', l)));
+root.appendChild(kg);
+root.appendChild(mkD());
+root.appendChild(makeBtn('momentary', 'momentary', 'fx'));
+const sl = document.createElement('div'); sl.className = 'strip-lbl'; sl.textContent = 'CH 1';
+root.appendChild(sl);
+
+function mkD() {
+  const d = document.createElement('div'); d.className = 'divider'; return d;
+}
+
+// ── Fader ──────────────────────────────────────────────────────────────
+function makeFader() {
+  const w = document.createElement('div'); w.className = 'fader';
+  w.innerHTML = `
+    <div class="fader-wrap">
+      <div class="fader-track"><div class="fader-fill"></div></div>
+      <div class="fader-handle"></div>
+    </div>
+    <div class="fader-val">000</div>
+    <div class="fader-lbl">VOL</div>
+  `;
+  const tw = w.querySelector('.fader-wrap');
+  const tr = w.querySelector('.fader-track');
+  const fi = w.querySelector('.fader-fill');
+  const ha = w.querySelector('.fader-handle');
+  const fv = w.querySelector('.fader-val');
+  let drag = false, rc = null;
+
+  function upd(y) {
+    const r = rc || tr.getBoundingClientRect();
+    const ratio = 1 - Math.max(0, Math.min(1, (y - r.top) / r.height));
+    const pct = ratio * 100;
+    const val = Math.round(ratio * 127);
+    fi.style.height   = pct + '%';
+    ha.style.bottom   = `calc(${pct}% - 7px)`;
+    fv.textContent    = String(val).padStart(3, '0');
+    showVal(val, 'VOL · CC 70');
+    pulse(true);
+    flash(`CC70 → ${val}`);
+  }
+
+  tw.addEventListener('mousedown', e => { drag = true; rc = tr.getBoundingClientRect(); upd(e.clientY); });
+  tw.addEventListener('touchstart', e => { e.preventDefault(); drag = true; rc = tr.getBoundingClientRect(); upd(e.touches[0].clientY); }, { passive: false });
+  document.addEventListener('mousemove', e => { if (drag) upd(e.clientY); });
+  document.addEventListener('touchmove', e => { if (drag) { e.preventDefault(); upd(e.touches[0].clientY); } }, { passive: false });
+  document.addEventListener('mouseup',   () => { if (drag) { drag = false; relPulse(); hideVal(); } });
+  document.addEventListener('touchend',  () => { if (drag) { drag = false; relPulse(); hideVal(); } });
+
+  return w;
+}
+
+// ── Button ─────────────────────────────────────────────────────────────
+function makeBtn(mode, variant, label) {
+  const w = document.createElement('div'); w.className = 'mel';
+  const b = document.createElement('div');
+  b.className = 'mbtn' + (variant ? ` mbtn--${variant}` : '');
+  b.innerHTML = '<div class="mbtn-dot"></div>';
+  const l = document.createElement('div'); l.className = 'blbl'; l.textContent = label;
+  w.appendChild(b); w.appendChild(l);
+  let state = false;
+
+  function start() {
+    b.classList.add('is-pressing');
+    pulse();
+    if (mode === 'momentary') {
+      b.classList.add('is-on'); l.style.color = '#ff4d00';
+      showVal('ON', `${label.toUpperCase()} · NOTE 36`);
+      flash('NOTE ON 36');
+    } else {
+      state = !state;
+      b.classList.toggle('is-on', state);
+      l.style.color = state ? '#ff4d00' : '';
+      showVal(state ? 'ON' : 'OFF', `${label.toUpperCase()} · NOTE 37`);
+      flash(`NOTE ${state ? 'ON' : 'OFF'} 37`);
+    }
+  }
+
+  function end() {
+    b.classList.remove('is-pressing');
+    if (mode === 'momentary') { b.classList.remove('is-on'); l.style.color = ''; }
+    hideVal();
+  }
+
+  b.addEventListener('mousedown',   start);
+  b.addEventListener('touchstart',  e => { e.preventDefault(); start(); }, { passive: false });
+  b.addEventListener('mouseup',     end);
+  b.addEventListener('mouseleave',  end);
+  b.addEventListener('touchend',    end);
+  b.addEventListener('touchcancel', end);
+
+  return w;
+}
+</script>
+</body>
+</html>

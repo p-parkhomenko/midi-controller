@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>MIDI CTRL — TE Edition</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Share+Tech+Mono&family=Orbitron:wght@400;500;600;700;800;900&family=Bitcount+Grid+Single:wght@100..900&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; touch-action: none; -webkit-user-select: none; user-select: none; background: #080808; }
+
+/* ── SCENE ── */
+.scene {
+  width: 100%; height: 100%;
+  display: flex; flex-direction: column;
+  font-family: 'Share Tech Mono', monospace;
+  color: rgba(255,255,255,0.85);
+  position: relative;
+  background: #080808;
+}
+
+/* ── DOT BACKGROUND ── */
+.dot-bg {
+  position: absolute; inset: 0;
+  pointer-events: none; z-index: 0;
+  background-image: radial-gradient(circle, rgba(255,255,255,0.07) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* ── SCANLINE OVERLAY ── */
+.scanlines {
+  position: absolute; inset: 0;
+  pointer-events: none; z-index: 9999;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0px,
+    transparent 2px,
+    rgba(0,0,0,0.04) 2px,
+    rgba(0,0,0,0.04) 4px
+  );
+  mix-blend-mode: multiply;
+}
+
+/* ── NOISE TEXTURE ── */
+.noise {
+  position: absolute; inset: 0;
+  pointer-events: none; z-index: 3;
+  opacity: 0.35;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+  background-size: 256px 256px;
+}
+
+/* ── EDGE PULSE — asymmetric, dramatic ── */
+.bg-pulse {
+  position: absolute; inset: 0;
+  pointer-events: none; z-index: 8000;
+  opacity: 0;
+  transition: opacity 0.08s ease;
+}
+.bg-pulse::after {
+  content: '';
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(ellipse at 0% 30%, rgba(255,77,0,0.35) 0%, transparent 35%),
+    radial-gradient(ellipse at 100% 70%, rgba(255,77,0,0.22) 0%, transparent 30%),
+    radial-gradient(ellipse at 60% 0%, rgba(255,77,0,0.14) 0%, transparent 25%),
+    radial-gradient(ellipse at 30% 100%, rgba(255,77,0,0.1) 0%, transparent 20%);
+}
+.bg-pulse.active { opacity: 1; }
+
+/* ── VALUE OVERLAY ── */
+.val-overlay {
+  position: fixed; inset: 0; z-index: 1;
+  pointer-events: none;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 6px;
+  mix-blend-mode: color-dodge;
+  visibility: hidden;
+  transition: visibility 0s linear 0.6s;
+}
+.val-overlay.visible {
+  visibility: visible;
+  transition: visibility 0s linear 0s;
+}
+.val-overlay .val-num,
+.val-overlay .val-hint {
+  opacity: 0;
+  transition: opacity 0.6s ease-out;
+}
+.val-overlay.visible .val-num,
+.val-overlay.visible .val-hint {
+  opacity: 1;
+  transition: opacity 0.4s ease-out;
+}
+
+.val-num {
+  font-family: 'Bitcount Grid Single', monospace;
+  font-size: 488px;
+  font-weight: 900;
+  font-variation-settings: 'wght' 900;
+  line-height: 1;
+  letter-spacing: -5px;
+  color: rgb(255, 180, 0);
+  min-width: 3ch;
+  text-align: center;
+  text-shadow: 0 0 80px rgba(255,180,0,0.3);
+}
+.val-hint {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px; letter-spacing: 0.25em;
+  color: rgba(255,255,255,0.45);
+  text-transform: uppercase;
+}
+
+/* ── HEADER ── */
+.hdr {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 16px;
+  flex-shrink: 0;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  position: relative; z-index: 4;
+  background: rgba(8,8,8,0.95);
+}
+.hdr::after {
+  content: '';
+  position: absolute;
+  bottom: -1px; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, #ff4d00 0%, rgba(255,77,0,0.3) 30%, transparent 60%);
+}
+
+.logo { display: flex; align-items: center; gap: 0; }
+.logo-mark {
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 11px; font-weight: 700;
+  letter-spacing: 0.32em;
+  color: #fff;
+  text-transform: uppercase;
+  padding-right: 4px;
+}
+.logo-dot { color: #ff4d00; font-size: 16px; line-height: 1; margin: 0 2px; }
+.logo-sub {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 8px; letter-spacing: 0.12em;
+  color: rgba(255,77,0,0.5);
+  text-transform: uppercase;
+  margin-left: 12px;
+  padding: 2px 7px;
+  border: 1px solid rgba(255,77,0,0.2);
+}
+.logo-jp {
+  font-size: 7px;
+  color: rgba(255,255,255,0.08);
+  letter-spacing: 0.3em;
+  margin-left: 10px;
+}
+
+.hdr-center { display: flex; align-items: center; gap: 16px; }
+.bpm {
+  display: flex; align-items: center; gap: 6px;
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 12px; font-weight: 600;
+  letter-spacing: 0.04em;
+  color: rgba(255,255,255,0.55);
+}
+.bpm-num {
+  font-family: 'Orbitron', sans-serif;
+  font-weight: 700; font-size: 13px;
+  color: rgba(255,77,0,0.8);
+  letter-spacing: 0.02em;
+}
+.bpm-led {
+  width: 3px; height: 3px;
+  background: #ff4d00;
+  box-shadow: 0 0 6px rgba(255,77,0,0.8);
+  animation: ledPulse 468ms ease-out infinite;
+}
+@keyframes ledPulse {
+  0%,100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.1; transform: scale(0.6); }
+}
+
+.conn {
+  display: flex; align-items: center; gap: 5px;
+  padding: 3px 8px;
+  border: 1px solid rgba(255,255,255,0.1);
+  font-size: 8px; letter-spacing: 0.12em;
+  color: rgba(255,255,255,0.3);
+  text-transform: uppercase;
+}
+.conn-dot {
+  width: 4px; height: 4px;
+  background: #22c55e;
+  box-shadow: 0 0 6px rgba(34,197,94,0.7);
+}
+
+/* ── CANVAS ── */
+.cvs {
+  flex: 1; display: flex;
+  align-items: center; justify-content: center;
+  padding: 24px;
+  position: relative; z-index: 2;
+}
+
+/* ── TECHNICAL ANNOTATIONS ── */
+.anno {
+  position: absolute;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 7px;
+  color: rgba(255,255,255,0.05);
+  letter-spacing: 0.08em;
+  pointer-events: none;
+  z-index: 1;
+}
+.anno--tl { top: 48px; left: 20px; }
+.anno--tr { top: 48px; right: 20px; text-align: right; }
+.anno--bl { bottom: 40px; left: 20px; }
+.anno--br { bottom: 40px; right: 20px; text-align: right; }
+
+/* ── STRIP — black, no dots, clean ── */
+.strip {
+  display: flex; flex-direction: column;
+  align-items: center; gap: 14px;
+  padding: 22px 18px 16px;
+  background: rgba(8,8,8,0.65);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255,255,255,0.08);
+  position: relative;
+  min-width: 108px;
+}
+
+.strip-idx {
+  position: absolute;
+  top: 6px; right: 8px;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 7px; font-weight: 500;
+  color: rgba(255,77,0,0.25);
+  letter-spacing: 0.05em;
+}
+.strip-jp {
+  position: absolute;
+  top: 6px; left: 8px;
+  font-size: 7px;
+  color: rgba(255,255,255,0.06);
+  letter-spacing: 0.15em;
+}
+
+.strip-lbl {
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 9px; font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.35);
+  padding-top: 6px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  width: 100%; text-align: center;
+}
+
+.divider {
+  width: 100%; height: 1px;
+  background: rgba(255,255,255,0.07);
+}
+
+/* ── FADER — label and value on TOP ── */
+.fader {
+  display: flex; flex-direction: column;
+  align-items: center; gap: 6px;
+  touch-action: none; cursor: ns-resize;
+}
+.fader-top {
+  display: flex; flex-direction: column;
+  align-items: center; gap: 2px;
+  order: -1;
+}
+.fader-val {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 11px; font-weight: 600;
+  color: rgba(255,255,255,0.5);
+  letter-spacing: 0.04em;
+  min-width: 28px; text-align: center;
+}
+.fader-lbl {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 7px;
+  color: rgba(255,255,255,0.25);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.fader-wrap {
+  position: relative;
+  width: 48px; height: 220px;
+  display: flex; align-items: center; justify-content: center;
+}
+.fader-track {
+  width: 3px; height: 100%;
+  background: rgba(255,255,255,0.12);
+  position: relative; overflow: hidden;
+}
+.fader-fill {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  height: 0%;
+  background: #ff4d00;
+  transition: height 0.03s linear;
+  box-shadow: 0 0 10px rgba(255,77,0,0.5);
+}
+
+/* Scale ticks */
+.fader-ticks {
+  position: absolute;
+  left: 2px; top: 0; bottom: 0; width: 10px;
+  pointer-events: none;
+}
+.fader-tick {
+  position: absolute; left: 0;
+  height: 1px;
+  background: rgba(255,255,255,0.15);
+}
+.fader-tick--major { width: 8px; background: rgba(255,255,255,0.22); }
+.fader-tick--minor { width: 4px; }
+/* Scale numbers */
+.fader-scale {
+  position: absolute;
+  right: 0; top: 0; bottom: 0; width: 16px;
+  pointer-events: none;
+  display: flex; flex-direction: column;
+  justify-content: space-between;
+  padding: 2px 0;
+}
+.fader-scale-num {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 6px;
+  color: rgba(255,255,255,0.15);
+  text-align: right;
+  line-height: 1;
+}
+
+.fader-handle {
+  position: absolute; bottom: 0%; left: 50%;
+  transform: translateX(-50%) translateY(50%);
+  width: 48px; height: 12px;
+  background: #ffffff;
+  transition: bottom 0.03s linear;
+}
+.fader-handle::before {
+  content: '';
+  position: absolute; inset: 3px 14px;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(0,0,0,0.15) 0px,
+    rgba(0,0,0,0.15) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+}
+.fader-handle::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 3px; height: 100%;
+  background: rgba(255,77,0,0.5);
+}
+
+/* ── BUTTONS — bold white borders, white dot ── */
+.mel { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+
+/* Label ABOVE button */
+.blbl {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 7px; letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.3);
+  transition: color 70ms;
+  text-align: center;
+  order: -1;
+}
+.mbtn.is-on ~ .blbl { color: #ff4d00; }
+
+.mbtn {
+  position: relative; cursor: pointer;
+  touch-action: none; -webkit-tap-highlight-color: transparent;
+  display: flex; align-items: center; justify-content: center;
+  width: 62px; height: 62px;
+  background-color: #1a1a1a;
+  background-image: radial-gradient(circle, rgba(255,255,255,0.05) 0.5px, transparent 0.5px);
+  background-size: 6px 6px;
+  border: 1px solid rgba(255,255,255,0.15);
+  box-shadow:
+    2px 2px 0 rgba(255,255,255,0.15),
+    4px 4px 0 rgba(255,255,255,0.06);
+  transition: all 40ms ease;
+}
+
+/* ── pressed: shadow collapses, button sinks ── */
+.mbtn.is-pressing {
+  transform: translate(2px, 2px);
+  box-shadow:
+    1px 1px 0 rgba(255,255,255,0.08);
+}
+
+/* ── active (toggled ON) ── */
+.mbtn.is-on {
+  background-color: #ff4d00;
+  background-image: radial-gradient(circle, rgba(255,255,255,0.1) 0.5px, transparent 0.5px);
+  border-color: rgba(255,77,0,0.5);
+  box-shadow:
+    2px 2px 0 rgba(255,77,0,0.3),
+    4px 4px 0 rgba(255,77,0,0.1),
+    0 0 20px rgba(255,77,0,0.3);
+}
+
+/* ── active + pressed ── */
+.mbtn.is-on.is-pressing {
+  transform: translate(2px, 2px);
+  box-shadow:
+    1px 1px 0 rgba(255,77,0,0.15),
+    0 0 12px rgba(255,77,0,0.2);
+}
+
+.mbtn-dot {
+  width: 6px; height: 6px;
+  background: rgba(255,255,255,0.6);
+  transition: all 40ms ease;
+}
+.mbtn.is-on .mbtn-dot {
+  background: rgba(0,0,0,0.4);
+  width: 8px; height: 8px;
+  border-radius: 50%;
+}
+
+/* Kill buttons */
+.mbtn--kill {
+  width: 48px; height: 48px;
+  background-size: 5px 5px;
+}
+
+/* Momentary — larger */
+.mbtn--momentary {
+  width: 70px; height: 70px;
+  background-size: 7px 7px;
+}
+.mbtn--momentary.is-on {
+  box-shadow:
+    2px 2px 0 rgba(255,77,0,0.3),
+    4px 4px 0 rgba(255,77,0,0.1),
+    0 0 35px rgba(255,77,0,0.4),
+    0 0 70px rgba(255,77,0,0.1);
+}
+
+.kill-group { display: flex; gap: 3px; }
+
+/* ── FOOTER ── */
+.ftr {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 16px;
+  border-top: 1px solid rgba(255,255,255,0.04);
+  position: relative; z-index: 4; flex-shrink: 0;
+  background: rgba(8,8,8,0.95);
+}
+.ftr::before {
+  content: '';
+  position: absolute;
+  top: -1px; right: 0;
+  width: 40%;
+  height: 1px;
+  background: linear-gradient(270deg, rgba(255,77,0,0.2) 0%, transparent 100%);
+}
+
+.log {
+  font-size: 9px;
+  color: rgba(255,255,255,0.15);
+  letter-spacing: 0.06em;
+}
+.ftr-jp {
+  font-size: 7px;
+  color: rgba(255,255,255,0.05);
+  letter-spacing: 0.2em;
+}
+.act-wrap { display: flex; align-items: center; gap: 8px; }
+.act-lbl {
+  font-family: 'Chakra Petch', sans-serif;
+  font-size: 7px; font-weight: 600;
+  letter-spacing: 0.15em;
+  color: rgba(255,255,255,0.15);
+  text-transform: uppercase;
+}
+.act {
+  width: 4px; height: 4px;
+  background: rgba(255,255,255,0.06);
+  transition: all 55ms ease;
+}
+.act.on {
+  background: #ff4d00;
+  box-shadow: 0 0 8px rgba(255,77,0,0.8);
+}
+
+/* ── BOOT ANIMATION ── */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes lineGrow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+@keyframes glitchIn {
+  0% { opacity: 0; transform: translateX(-3px); }
+  30% { opacity: 1; transform: translateX(1px); }
+  50% { transform: translateX(-1px); }
+  100% { transform: translateX(0); }
+}
+
+.hdr { animation: fadeUp 0.4s ease-out 0.1s both; }
+.strip { animation: fadeUp 0.5s ease-out 0.25s both; }
+.ftr { animation: fadeUp 0.4s ease-out 0.4s both; }
+.hdr::after { animation: lineGrow 0.6s ease-out 0.5s both; transform-origin: left; }
+.anno { animation: glitchIn 0.3s ease-out 0.6s both; }
+</style>
+</head>
+<body>
+
+<!-- Value overlay -->
+<div class="val-overlay" id="valOverlay">
+  <div class="val-num" id="valNum">000</div>
+  <div class="val-hint" id="valHint">CC 70</div>
+</div>
+
+<div class="scene">
+  <div class="dot-bg"></div>
+  <div class="scanlines"></div>
+  <div class="noise"></div>
+  <div class="bg-pulse" id="bgPulse"></div>
+
+  <!-- Technical annotations -->
+  <div class="anno anno--tl">SYS:WEBMIDI/1.0<br>PROTOCOL:RTP</div>
+  <div class="anno anno--tr">LAYOUT:FIXED<br>GRID:24×24</div>
+  <div class="anno anno--bl">CC:070-119<br>NOTE:036-127</div>
+  <div class="anno anno--br">DEVICE:001<br>CH:01/16</div>
+
+  <header class="hdr">
+    <div class="logo">
+      <span class="logo-mark">MIDI<span class="logo-dot">·</span>CTRL</span>
+      <span class="logo-sub">PHASE·1</span>
+      <span class="logo-jp">コントローラ</span>
+    </div>
+    <div class="hdr-center">
+      <div class="bpm">
+        <div class="bpm-led"></div>
+        <span class="bpm-num">128</span>
+        <span>BPM</span>
+      </div>
+    </div>
+    <div class="conn"><div class="conn-dot"></div>RTP-MIDI</div>
+  </header>
+
+  <main class="cvs">
+    <div class="strip" id="strip">
+      <span class="strip-idx">01</span>
+      <span class="strip-jp">チャンネル</span>
+    </div>
+  </main>
+
+  <footer class="ftr">
+    <div class="log" id="log">— READY —</div>
+    <div class="ftr-jp">出力</div>
+    <div class="act-wrap">
+      <span class="act-lbl">TX OUT</span>
+      <div class="act" id="actLed"></div>
+    </div>
+  </footer>
+</div>
+
+<script>
+const valOverlay = document.getElementById('valOverlay');
+const valNumEl   = document.getElementById('valNum');
+const valHintEl  = document.getElementById('valHint');
+const bgPulse    = document.getElementById('bgPulse');
+const logEl      = document.getElementById('log');
+const actLed     = document.getElementById('actLed');
+
+let hideT = null, pulseT = null, actT = null;
+
+function showVal(v, h) {
+  valNumEl.textContent  = typeof v === 'number' ? String(v).padStart(3,'0') : v;
+  valHintEl.textContent = h || '';
+  valOverlay.classList.add('visible');
+  clearTimeout(hideT);
+}
+function hideVal() {
+  clearTimeout(hideT);
+  hideT = setTimeout(() => valOverlay.classList.remove('visible'), 200);
+}
+function pulse(hold) {
+  bgPulse.classList.add('active');
+  clearTimeout(pulseT);
+  if (!hold) pulseT = setTimeout(() => bgPulse.classList.remove('active'), 300);
+}
+function relPulse() {
+  pulseT = setTimeout(() => bgPulse.classList.remove('active'), 200);
+}
+function flash(m) {
+  actLed.classList.add('on');
+  logEl.textContent = m;
+  clearTimeout(actT);
+  actT = setTimeout(() => actLed.classList.remove('on'), 100);
+}
+
+// ── Build Strip ──
+const root = document.getElementById('strip');
+root.appendChild(makeFader());
+root.appendChild(mkD());
+root.appendChild(makeBtn('toggle', '', 'mute'));
+root.appendChild(mkD());
+const kg = document.createElement('div'); kg.className = 'kill-group';
+['lo','mid','hi'].forEach(l => kg.appendChild(makeBtn('toggle', 'kill', l)));
+root.appendChild(kg);
+root.appendChild(mkD());
+root.appendChild(makeBtn('momentary', 'momentary', 'fx'));
+const sl = document.createElement('div'); sl.className = 'strip-lbl'; sl.textContent = 'CH 1';
+root.appendChild(sl);
+
+function mkD() {
+  const d = document.createElement('div'); d.className = 'divider'; return d;
+}
+
+// ── Fader — label + value on top ──
+function makeFader() {
+  const w = document.createElement('div'); w.className = 'fader';
+  w.innerHTML = `
+    <div class="fader-top">
+      <div class="fader-val">000</div>
+      <div class="fader-lbl">VOL</div>
+    </div>
+    <div class="fader-wrap">
+      <div class="fader-ticks"></div>
+      <div class="fader-track"><div class="fader-fill"></div></div>
+      <div class="fader-handle"></div>
+      <div class="fader-scale">
+        <div class="fader-scale-num">127</div>
+        <div class="fader-scale-num">96</div>
+        <div class="fader-scale-num">64</div>
+        <div class="fader-scale-num">32</div>
+        <div class="fader-scale-num">0</div>
+      </div>
+    </div>
+  `;
+
+  const ticks = w.querySelector('.fader-ticks');
+  for (let i = 0; i <= 20; i++) {
+    const t = document.createElement('div');
+    t.className = 'fader-tick' + (i % 5 === 0 ? ' fader-tick--major' : ' fader-tick--minor');
+    t.style.top = (i / 20 * 100) + '%';
+    ticks.appendChild(t);
+  }
+
+  const tw = w.querySelector('.fader-wrap');
+  const tr = w.querySelector('.fader-track');
+  const fi = w.querySelector('.fader-fill');
+  const ha = w.querySelector('.fader-handle');
+  const fv = w.querySelector('.fader-val');
+  let drag = false, rc = null;
+
+  function upd(y) {
+    const r = rc || tr.getBoundingClientRect();
+    const ratio = 1 - Math.max(0, Math.min(1, (y - r.top) / r.height));
+    const pct = ratio * 100;
+    const val = Math.round(ratio * 127);
+    fi.style.height = pct + '%';
+    ha.style.bottom = `calc(${pct}% - 6px)`;
+    fv.textContent  = String(val).padStart(3, '0');
+    showVal(val, 'VOL · CC 70');
+    pulse(true);
+    flash(`CC70 → ${val}`);
+  }
+
+  tw.addEventListener('mousedown', e => { drag = true; rc = tr.getBoundingClientRect(); upd(e.clientY); });
+  tw.addEventListener('touchstart', e => { e.preventDefault(); drag = true; rc = tr.getBoundingClientRect(); upd(e.touches[0].clientY); }, { passive: false });
+  document.addEventListener('mousemove', e => { if (drag) upd(e.clientY); });
+  document.addEventListener('touchmove', e => { if (drag) { e.preventDefault(); upd(e.touches[0].clientY); } }, { passive: false });
+  document.addEventListener('mouseup',   () => { if (drag) { drag = false; relPulse(); hideVal(); } });
+  document.addEventListener('touchend',  () => { if (drag) { drag = false; relPulse(); hideVal(); } });
+
+  return w;
+}
+
+// ── Button — label on top via CSS order ──
+function makeBtn(mode, variant, label) {
+  const w = document.createElement('div'); w.className = 'mel';
+  const b = document.createElement('div');
+  b.className = 'mbtn' + (variant ? ` mbtn--${variant}` : '');
+  b.innerHTML = '<div class="mbtn-dot"></div>';
+  const l = document.createElement('div'); l.className = 'blbl'; l.textContent = label;
+  w.appendChild(b); w.appendChild(l);
+  let state = false;
+
+  function start() {
+    b.classList.add('is-pressing');
+    pulse();
+    if (mode === 'momentary') {
+      b.classList.add('is-on'); l.style.color = '#ff4d00';
+      showVal('ON', `${label.toUpperCase()} · NOTE 36`);
+      flash('NOTE ON 36');
+    } else {
+      state = !state;
+      b.classList.toggle('is-on', state);
+      l.style.color = state ? '#ff4d00' : '';
+      showVal(state ? 'ON' : 'OFF', `${label.toUpperCase()} · NOTE 37`);
+      flash(`NOTE ${state ? 'ON' : 'OFF'} 37`);
+    }
+  }
+
+  function end() {
+    b.classList.remove('is-pressing');
+    if (mode === 'momentary') { b.classList.remove('is-on'); l.style.color = ''; }
+    hideVal();
+  }
+
+  b.addEventListener('mousedown',   start);
+  b.addEventListener('touchstart',  e => { e.preventDefault(); start(); }, { passive: false });
+  b.addEventListener('mouseup',     end);
+  b.addEventListener('mouseleave',  end);
+  b.addEventListener('touchend',    end);
+  b.addEventListener('touchcancel', end);
+
+  return w;
+}
+</script>
+</body>
+</html>
