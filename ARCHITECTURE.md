@@ -33,16 +33,35 @@
 
 Единственная реализация — WebMIDI API. WebMIDI и RTP-MIDI это один транспорт, разница только в выборе порта.
 
+Двусторонний: есть и выходной, и входной порт. Выходной передаёт действия пользователя, входной принимает обратные сообщения от Ableton (MIDI Feedback) для синхронизации визуального состояния. См. LOG #018, Принцип 6.
+
 ```
 MIDITransport
-  connect(portId)
-  disconnect()
+  connect() → { outputs, inputs }
+  selectOutputPort(id)
+  selectInputPort(id)
   send(message)
-  getPorts() → list
-  onPortsChange(callback)
+  onMessage(callback)       // входящие сообщения
+  onActivity(callback)      // исходящие сообщения
+  getOutputPorts() → list
+  getInputPorts()  → list
+  onOutputPortsChange(cb)
+  onInputPortsChange(cb)
 ```
 
 OSC — не входит в этот проект.
+
+### Routing входящих сообщений
+
+Входящий MIDI маппится на элементы по адресу `(channel, cc)` или `(channel, note)`. Таблица маршрутизации строится при рендере: каждый элемент регистрирует свой адрес и функцию применения входящего сообщения.
+
+```
+dispatch(msg)
+  key = "cc:<channel>:<cc>" | "note:<channel>:<note>"
+  routingMap.get(key)?.(msg)  // обновляет data + визуал без исходящего send
+```
+
+Исходящий путь и входящий путь изолированы: входящее сообщение никогда не вызывает `transport.send()` — иначе получается петля фидбека.
 
 ---
 

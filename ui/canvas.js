@@ -105,7 +105,7 @@ export function renderFader(data, transport, ui) {
     </div>
   `;
 
-  const ticksEl  = wrap.querySelector('.fader-ticks');
+  const ticksEl = wrap.querySelector('.fader-ticks');
   for (let i = 0; i <= 20; i++) {
     const t = document.createElement('div');
     t.className = 'fader-tick' + (i % 5 === 0 ? ' fader-tick--major' : ' fader-tick--minor');
@@ -164,7 +164,19 @@ export function renderFader(data, transport, ui) {
   trackWrap.addEventListener('mousedown',  onStart);
   trackWrap.addEventListener('touchstart', onStart, { passive: false });
 
-  return wrap;
+  // Inbound: CC from Ableton updates visual without re-emitting.
+  const applyInput = (msg) => {
+    if (msg.type !== 'cc') return;
+    if (msg.channel !== data.channel || msg.cc !== data.cc) return;
+    if (msg.value === data.value) return;
+    data.value = msg.value;
+    updateVisual(msg.value);
+  };
+
+  return {
+    el: wrap,
+    entries: [[`cc:${data.channel}:${data.cc}`, applyInput]],
+  };
 }
 
 export function renderButton(data, transport, variant, ui) {
@@ -213,7 +225,40 @@ export function renderButton(data, transport, variant, ui) {
   btn.addEventListener('touchend',    pressEnd);
   btn.addEventListener('touchcancel', pressEnd);
 
-  return wrap;
+  // Inbound: mirror Ableton state without re-emitting.
+  const applyInput = (msg) => {
+    if (msg.channel !== data.channel) return;
+    if (data.mode === 'toggle') {
+      if (msg.type !== 'cc' || msg.cc !== data.cc) return;
+      const state = msg.value >= 64;
+      if (state === data.state) return;
+      data.state = state;
+      btn.classList.toggle('is-on', state);
+      lbl.style.color = state ? 'var(--accent)' : '';
+    } else {
+      if (msg.note !== data.note) return;
+      const on = msg.type === 'note_on' && msg.velocity > 0;
+      const off = msg.type === 'note_off' || (msg.type === 'note_on' && msg.velocity === 0);
+      if (on && !data.state) {
+        data.state = true;
+        btn.classList.add('is-on');
+        lbl.style.color = 'var(--accent)';
+      } else if (off && data.state) {
+        data.state = false;
+        btn.classList.remove('is-on');
+        lbl.style.color = '';
+      }
+    }
+  };
+
+  const key = data.mode === 'toggle'
+    ? `cc:${data.channel}:${data.cc}`
+    : `note:${data.channel}:${data.note}`;
+
+  return {
+    el: wrap,
+    entries: [[key, applyInput]],
+  };
 }
 
 export function renderStrip(strip, transport, ui) {
@@ -223,39 +268,58 @@ export function renderStrip(strip, transport, ui) {
   const idx = document.createElement('span');
   idx.className = 'strip-idx';
   idx.textContent = '01';
+  el.appendChild(idx);
 
   const jp = document.createElement('span');
   jp.className = 'strip-jp';
   jp.textContent = 'チャンネル';
-
-  el.appendChild(idx);
   el.appendChild(jp);
-  el.appendChild(renderFader(strip.fader, transport, ui));
+
+  const entries = [];
+  const mount = (r) => { el.appendChild(r.el); entries.push(...r.entries); };
+
+  mount(renderFader(strip.fader, transport, ui));
   el.appendChild(mkDivider());
-  el.appendChild(renderButton(strip.mute, transport, '', ui));
+  mount(renderButton(strip.mute, transport, '', ui));
   el.appendChild(mkDivider());
 
   const kills = document.createElement('div');
   kills.className = 'kill-group';
-  kills.appendChild(renderButton(strip.killLow, transport, 'kill', ui));
-  kills.appendChild(renderButton(strip.killMid, transport, 'kill', ui));
-  kills.appendChild(renderButton(strip.killHi,  transport, 'kill', ui));
+  for (const k of [strip.killLow, strip.killMid, strip.killHi]) {
+    const r = renderButton(k, transport, 'kill', ui);
+    kills.appendChild(r.el);
+    entries.push(...r.entries);
+  }
   el.appendChild(kills);
 
   el.appendChild(mkDivider());
-  el.appendChild(renderButton(strip.impulse, transport, 'momentary', ui));
+  mount(renderButton(strip.impulse, transport, 'momentary', ui));
 
   const lbl = document.createElement('div');
   lbl.className = 'strip-lbl';
   lbl.textContent = strip.label;
   el.appendChild(lbl);
 
-  return el;
+  return { el, entries };
 }
 
 export function renderCanvas(rootEl, layout, transport, ui) {
   rootEl.innerHTML = '';
+  const routing = new Map();
   for (const strip of layout.strips) {
-    rootEl.appendChild(renderStrip(strip, transport, ui));
+    const { el, entries } = renderStrip(strip, transport, ui);
+    rootEl.appendChild(el);
+    for (const [key, fn] of entries) routing.set(key, fn);
   }
+  return {
+    dispatch(msg) {
+      if (!msg) return;
+      let key;
+      if (msg.type === 'cc') key = `cc:${msg.channel}:${msg.cc}`;
+      else if (msg.type === 'note_on' || msg.type === 'note_off') key = `note:${msg.channel}:${msg.note}`;
+      else return;
+      const fn = routing.get(key);
+      if (fn) fn(msg);
+    },
+  };
 }

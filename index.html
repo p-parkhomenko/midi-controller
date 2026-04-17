@@ -57,8 +57,10 @@
     <div class="log" id="log">— READY —</div>
     <div class="ftr-jp">出力</div>
     <div class="act-wrap">
-      <span class="act-lbl">TX OUT</span>
+      <span class="act-lbl">TX</span>
       <div class="act" id="actLed"></div>
+      <span class="act-lbl">RX</span>
+      <div class="act" id="rxLed"></div>
     </div>
   </footer>
 </div>
@@ -87,13 +89,14 @@ const connText   = document.getElementById('connText');
 const portSelect = document.getElementById('portSelect');
 const logEl      = document.getElementById('log');
 const actLed     = document.getElementById('actLed');
+const rxLed      = document.getElementById('rxLed');
 const bgPulse    = document.getElementById('bgPulse');
 const valOverlay = document.getElementById('valOverlay');
 const valNumEl   = document.getElementById('valNum');
 const valHintEl  = document.getElementById('valHint');
 const overlay    = document.getElementById('midiOverlay');
 
-let hideT = null, pulseT = null, actT = null, logT = null;
+let hideT = null, pulseT = null, actT = null, rxT = null, logT = null;
 
 const ui = {
   showVal(v, hint) {
@@ -116,7 +119,7 @@ const ui = {
   },
 };
 
-renderCanvas(canvasEl, layout, transport, ui);
+const canvasApi = renderCanvas(canvasEl, layout, transport, ui);
 
 transport.onActivity((msg) => {
   actLed.classList.add('on');
@@ -124,62 +127,99 @@ transport.onActivity((msg) => {
   actT = setTimeout(() => actLed.classList.remove('on'), 100);
 
   const label = msg.type === 'cc'
-    ? `CC${msg.cc} → ${msg.value}`
-    : `NOTE ${msg.type === 'note_on' ? 'ON' : 'OFF'} ${msg.note}`;
+    ? `TX CC${msg.cc} → ${msg.value}`
+    : `TX NOTE ${msg.type === 'note_on' ? 'ON' : 'OFF'} ${msg.note}`;
   logEl.textContent = label;
   clearTimeout(logT);
   logT = setTimeout(() => { logEl.textContent = '— READY —'; }, 1500);
 });
 
-function setStatus(text, state) {
-  connText.textContent = text;
+transport.onMessage((msg) => {
+  rxLed.classList.add('on');
+  clearTimeout(rxT);
+  rxT = setTimeout(() => rxLed.classList.remove('on'), 100);
+
+  const label = msg.type === 'cc'
+    ? `RX CC${msg.cc} → ${msg.value}`
+    : `RX NOTE ${msg.type === 'note_on' ? 'ON' : 'OFF'} ${msg.note}`;
+  logEl.textContent = label;
+  clearTimeout(logT);
+  logT = setTimeout(() => { logEl.textContent = '— READY —'; }, 1500);
+
+  canvasApi.dispatch(msg);
+});
+
+function setStatus(text, state, duplex) {
+  const prefix = duplex ? '⇄ ' : (state === 'connected' ? '→ ' : '');
+  connText.textContent = prefix + text;
   connDot.className = 'conn-dot' + (state ? ` ${state}` : '');
 }
 
-function populatePorts(ports) {
+// Auto-match input port by name when output is selected.
+function matchInputByName(name, inputs) {
+  return inputs.find(p => p.name === name) ?? null;
+}
+
+function applySelection(outputId) {
+  if (!outputId) return;
+  const outputs = transport.getOutputPorts();
+  const inputs  = transport.getInputPorts();
+  const outPort = outputs.find(p => p.id === outputId);
+  if (!outPort) return;
+
+  transport.selectOutputPort(outputId);
+  const inPort = matchInputByName(outPort.name, inputs);
+  if (inPort) transport.selectInputPort(inPort.id);
+
+  setStatus(outPort.name, 'connected', !!inPort);
+}
+
+function populatePorts(outputs) {
   portSelect.innerHTML = '<option value="">— port —</option>';
-  ports.forEach(p => {
+  outputs.forEach(p => {
     const o = document.createElement('option');
     o.value = p.id; o.textContent = p.name;
     portSelect.appendChild(o);
   });
-  portSelect.style.display = ports.length ? 'block' : 'none';
-  if (ports.length && !transport.isConnected) {
-    portSelect.value = ports[0].id;
-    transport.selectPort(ports[0].id);
-    setStatus(ports[0].name, 'connected');
+  portSelect.style.display = outputs.length ? 'block' : 'none';
+  if (outputs.length && !transport.isConnected) {
+    portSelect.value = outputs[0].id;
+    applySelection(outputs[0].id);
   }
 }
 
 portSelect.addEventListener('change', () => {
-  const id   = portSelect.value;
-  const name = portSelect.options[portSelect.selectedIndex]?.text;
-  if (id) { transport.selectPort(id); setStatus(name, 'connected'); }
+  if (portSelect.value) applySelection(portSelect.value);
 });
 
 async function connectMIDI() {
   try {
-    const ports = await transport.connect();
-    setStatus('READY', 'connected');
+    const { outputs } = await transport.connect();
+    setStatus('READY', 'connected', false);
     overlay.classList.add('hidden');
-    populatePorts(ports);
-    transport.onPortsChange(populatePorts);
+    populatePorts(outputs);
+    transport.onOutputPortsChange(populatePorts);
+    transport.onInputPortsChange(() => {
+      // If current output has a new matching input, hook it up.
+      const selectedOutId = portSelect.value;
+      if (selectedOutId) applySelection(selectedOutId);
+    });
   } catch {
-    setStatus('NO MIDI', 'error');
+    setStatus('NO MIDI', 'error', false);
     overlay.classList.remove('hidden');
   }
 }
 
 document.getElementById('overlayDismiss').addEventListener('click', () => {
   overlay.classList.add('hidden');
-  setStatus('DEMO', '');
+  setStatus('DEMO', '', false);
 });
 
 if (navigator.requestMIDIAccess) {
   overlay.classList.add('hidden');
   connectMIDI();
 } else {
-  setStatus('NO MIDI', 'error');
+  setStatus('NO MIDI', 'error', false);
 }
 </script>
 </body>
