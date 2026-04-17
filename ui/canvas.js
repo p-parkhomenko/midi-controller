@@ -9,12 +9,12 @@ class ButtonElement {
 
   onPressStart() {
     const d = this._d;
-    if (d.mode === 'momentary') {
+    if (d.mode === 'toggle') {
+      this._set(!d.state);
+      this._t.send({ type: 'cc', channel: d.channel, cc: d.cc, value: d.state ? 127 : 0 });
+    } else if (d.mode === 'momentary') {
       this._set(true);
       this._noteOn();
-    } else if (d.mode === 'toggle') {
-      this._set(!d.state);
-      d.state ? this._noteOn() : this._noteOff();
     } else if (d.mode === 'trigger') {
       this._noteOn();
       setTimeout(() => this._noteOff(), 50);
@@ -194,7 +194,8 @@ export function renderButton(data, transport, variant, ui) {
     btn.classList.add('is-pressing');
     inst.onPressStart();
     const stateLabel = data.mode === 'momentary' ? 'ON' : (data.state ? 'ON' : 'OFF');
-    ui.showVal(stateLabel, `${data.label.toUpperCase()} · NOTE ${data.note}`);
+    const target = data.mode === 'toggle' ? `CC ${data.cc}` : `NOTE ${data.note}`;
+    ui.showVal(stateLabel, `${data.label.toUpperCase()} · ${target}`);
     ui.pulseStart();
   };
 

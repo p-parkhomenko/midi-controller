@@ -10,7 +10,10 @@ export function createFader(label = '') {
 }
 
 export function createButton(mode, label = '') {
-  return { id: uuid(), type: 'button', mode, note: nextNote(), channel: 1, state: false, label };
+  const base = { id: uuid(), type: 'button', mode, channel: 1, state: false, label };
+  return mode === 'toggle'
+    ? { ...base, cc: nextCC() }
+    : { ...base, note: nextNote() };
 }
 
 export function createChannelStrip(label) {
