@@ -11,7 +11,8 @@ class ButtonElement {
     const d = this._d;
     if (d.mode === 'toggle') {
       this._set(!d.state);
-      this._t.send({ type: 'cc', channel: d.channel, cc: d.cc, value: d.state ? 127 : 0 });
+      this._noteOn();
+      setTimeout(() => this._noteOff(), 50);
     } else if (d.mode === 'momentary') {
       this._set(true);
       this._noteOn();
@@ -206,8 +207,7 @@ export function renderButton(data, transport, variant, ui) {
     btn.classList.add('is-pressing');
     inst.onPressStart();
     const stateLabel = data.mode === 'momentary' ? 'ON' : (data.state ? 'ON' : 'OFF');
-    const target = data.mode === 'toggle' ? `CC ${data.cc}` : `NOTE ${data.note}`;
-    ui.showVal(stateLabel, `${data.label.toUpperCase()} · ${target}`);
+    ui.showVal(stateLabel, `${data.label.toUpperCase()} · NOTE ${data.note}`);
     ui.pulseStart();
   };
 
@@ -227,37 +227,23 @@ export function renderButton(data, transport, variant, ui) {
 
   // Inbound: mirror Ableton state without re-emitting.
   const applyInput = (msg) => {
-    if (msg.channel !== data.channel) return;
-    if (data.mode === 'toggle') {
-      if (msg.type !== 'cc' || msg.cc !== data.cc) return;
-      const state = msg.value >= 64;
-      if (state === data.state) return;
-      data.state = state;
-      btn.classList.toggle('is-on', state);
-      lbl.style.color = state ? 'var(--accent)' : '';
-    } else {
-      if (msg.note !== data.note) return;
-      const on = msg.type === 'note_on' && msg.velocity > 0;
-      const off = msg.type === 'note_off' || (msg.type === 'note_on' && msg.velocity === 0);
-      if (on && !data.state) {
-        data.state = true;
-        btn.classList.add('is-on');
-        lbl.style.color = 'var(--accent)';
-      } else if (off && data.state) {
-        data.state = false;
-        btn.classList.remove('is-on');
-        lbl.style.color = '';
-      }
+    if (msg.channel !== data.channel || msg.note !== data.note) return;
+    const on  = msg.type === 'note_on' && msg.velocity > 0;
+    const off = msg.type === 'note_off' || (msg.type === 'note_on' && msg.velocity === 0);
+    if (on && !data.state) {
+      data.state = true;
+      btn.classList.add('is-on');
+      lbl.style.color = 'var(--accent)';
+    } else if (off && data.state) {
+      data.state = false;
+      btn.classList.remove('is-on');
+      lbl.style.color = '';
     }
   };
 
-  const key = data.mode === 'toggle'
-    ? `cc:${data.channel}:${data.cc}`
-    : `note:${data.channel}:${data.note}`;
-
   return {
     el: wrap,
-    entries: [[key, applyInput]],
+    entries: [[`note:${data.channel}:${data.note}`, applyInput]],
   };
 }
 
