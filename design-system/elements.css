@@ -240,11 +240,277 @@ html, body {
 
 /* ── CANVAS ── */
 .cvs {
-  flex: 1; display: flex;
-  align-items: center; justify-content: center;
-  padding: 24px;
+  flex: 1;
   position: relative; z-index: 2;
+  overflow: hidden;
+  transform-origin: top left;
 }
+
+/* ── ISLAND ── */
+.island {
+  position: absolute;
+  transition: left 80ms ease, top 80ms ease, width 80ms ease, height 80ms ease;
+}
+.island.is-dragging {
+  transition: none;
+  opacity: 0.9;
+}
+.island-inner {
+  position: absolute;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* Edit mode: overlay on every island */
+.island-overlay {
+  position: absolute; inset: 0;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.18);
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* Corner resize handles */
+.island-handle {
+  position: absolute;
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1.5px solid rgba(255,77,0,0.8);
+  z-index: 20;
+  /* Extend touch area with padding trick */
+  padding: 16px;
+  margin: -16px;
+  background-clip: content-box;
+  cursor: pointer;
+  touch-action: none;
+}
+.island-handle--tl { top: 0;   left: 0;  }
+.island-handle--tr { top: 0;   right: 0; }
+.island-handle--bl { bottom: 0; left: 0; }
+.island-handle--br { bottom: 0; right: 0; }
+
+/* ── MODE CONTROL — bottom-left ── */
+.mode-control {
+  position: fixed;
+  bottom: 44px; left: 16px;
+  z-index: 1000;
+  display: flex; align-items: center; gap: 8px;
+}
+
+/* Segmented control — Liquid Glass */
+.segmented {
+  display: flex;
+  background: rgba(28,28,28,0.72);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  border: 1px solid rgba(255,255,255,0.14);
+  border-radius: 20px;
+  padding: 3px;
+  gap: 2px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08);
+}
+.seg-btn {
+  background: transparent;
+  border: none;
+  color: rgba(255,255,255,0.45);
+  font-family: var(--font-mono);
+  font-size: 10px; letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 5px 14px;
+  border-radius: 16px;
+  cursor: pointer;
+  transition: color 180ms ease, background 180ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.seg-btn.is-active {
+  background: rgba(255,77,0,0.85);
+  color: #fff;
+  box-shadow: 0 1px 6px rgba(255,77,0,0.4);
+}
+
+/* Add button */
+.add-btn {
+  display: none; /* shown in edit mode via JS */
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  background: rgba(255,77,0,0.85);
+  border: none;
+  color: #fff;
+  font-size: 18px; line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(255,77,0,0.4);
+  transition: transform 80ms ease, box-shadow 80ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.add-btn:active { transform: scale(0.92); }
+
+/* ── DRAWER ── */
+.drawer {
+  position: fixed;
+  top: 0; right: 0;
+  width: 320px; height: 100%;
+  background: rgba(14,14,14,0.88);
+  backdrop-filter: blur(28px) saturate(1.5);
+  -webkit-backdrop-filter: blur(28px) saturate(1.5);
+  border-left: 1px solid rgba(255,255,255,0.1);
+  z-index: 500;
+  transform: translateX(100%);
+  transition: transform 220ms cubic-bezier(0.4,0,0.2,1);
+  display: flex; flex-direction: column;
+}
+.drawer.is-open { transform: translateX(0); }
+
+.drawer-content { display: flex; flex-direction: column; height: 100%; }
+
+.drawer-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 20px 20px 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+  flex-shrink: 0;
+}
+.drawer-title {
+  font-family: var(--font-mono);
+  font-size: 9px; letter-spacing: 0.2em;
+  color: rgba(255,255,255,0.4);
+}
+.drawer-close {
+  background: transparent; border: none;
+  color: rgba(255,255,255,0.3);
+  font-size: 14px; cursor: pointer;
+  padding: 4px 8px;
+  -webkit-tap-highlight-color: transparent;
+}
+.drawer-close:hover { color: rgba(255,255,255,0.7); }
+
+.drawer-fields {
+  flex: 1; overflow-y: auto;
+  padding: 16px 20px;
+  display: flex; flex-direction: column; gap: 16px;
+}
+.drawer-field {
+  display: flex; flex-direction: column; gap: 6px;
+}
+.drawer-field > span {
+  font-family: var(--font-mono);
+  font-size: 8px; letter-spacing: 0.15em;
+  color: rgba(255,255,255,0.3);
+  text-transform: uppercase;
+}
+.drawer-field input {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: rgba(255,255,255,0.85);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  padding: 8px 10px;
+  outline: none;
+  width: 100%;
+  -webkit-appearance: none;
+}
+.drawer-field input:focus { border-color: rgba(255,77,0,0.5); }
+
+.drawer-field--segmented .seg { border-radius: 6px; }
+.seg--3 .seg-btn { padding: 5px 10px; font-size: 9px; }
+
+.drawer-actions {
+  padding: 16px 20px 24px;
+  display: flex; flex-direction: column; gap: 8px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  flex-shrink: 0;
+}
+.drawer-btn {
+  padding: 10px;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 9px; letter-spacing: 0.15em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all var(--trans-fast);
+  -webkit-tap-highlight-color: transparent;
+}
+.drawer-btn--secondary {
+  border: 1px solid rgba(255,255,255,0.15);
+  color: rgba(255,255,255,0.5);
+}
+.drawer-btn--secondary:active { background: rgba(255,255,255,0.07); }
+.drawer-btn--danger {
+  border: 1px solid rgba(255,60,60,0.4);
+  color: rgba(255,80,80,0.8);
+}
+.drawer-btn--danger:active { background: rgba(255,60,60,0.1); }
+
+/* Palette */
+.drawer-palette {
+  flex: 1; padding: 20px;
+  display: flex; flex-wrap: wrap; gap: 12px; align-content: flex-start;
+}
+.palette-item {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  width: calc(50% - 6px);
+  padding: 16px 8px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.1);
+  cursor: pointer;
+  color: rgba(255,255,255,0.6);
+  font-family: var(--font-mono);
+  font-size: 9px; letter-spacing: 0.12em;
+  text-transform: uppercase;
+  transition: border-color var(--trans-fast), background var(--trans-fast);
+  -webkit-tap-highlight-color: transparent;
+}
+.palette-item:active { border-color: var(--accent); background: rgba(255,77,0,0.08); }
+.palette-icon {
+  width: 36px; height: 36px;
+  opacity: 0.4;
+}
+.palette-icon--fader {
+  background: linear-gradient(to top, var(--accent) 40%, rgba(255,255,255,0.2) 40%);
+  width: 8px;
+}
+.palette-icon--button {
+  background: rgba(255,255,255,0.2);
+  border: 1px solid rgba(255,255,255,0.3);
+}
+
+/* ── TOAST ── */
+.toast {
+  position: fixed;
+  bottom: 44px; left: 50%; transform: translateX(-50%) translateY(20px);
+  z-index: 2000;
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 16px;
+  background: rgba(22,22,22,0.9);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 24px;
+  opacity: 0;
+  transition: opacity 200ms ease, transform 200ms ease;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.toast.is-visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+.toast-msg {
+  font-family: var(--font-mono);
+  font-size: 10px; letter-spacing: 0.1em;
+  color: rgba(255,255,255,0.6);
+}
+.toast-undo {
+  background: transparent;
+  border: 1px solid rgba(255,77,0,0.5);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 9px; letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 3px 10px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.toast-undo:active { background: rgba(255,77,0,0.1); }
 
 /* ── STRIP ── */
 .strip {

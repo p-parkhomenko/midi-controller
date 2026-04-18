@@ -1,3 +1,7 @@
+import { ELEMENT_DEFS, gridToPx } from '../core/layout.js';
+
+// ─── ButtonElement ──────────────────────────────────────────────────────────
+
 class ButtonElement {
   constructor(data, transport) {
     this._d = data;
@@ -8,19 +12,17 @@ class ButtonElement {
   onStateChange(cb) { this._onChange = cb; }
 
   onPressStart() {
-    const d = this._d;
-    if (d.mode === 'toggle') {
-      this._set(!d.state);
+    if (this._d.mode === 'toggle') {
+      this._set(!this._d.state);
       this._noteOn();
       setTimeout(() => this._noteOff(), 50);
-    } else if (d.mode === 'momentary') {
+    } else if (this._d.mode === 'momentary') {
       this._set(true);
       this._noteOn();
-    } else if (d.mode === 'trigger') {
-      this._noteOn();
-      setTimeout(() => this._noteOff(), 50);
+    } else if (this._d.mode === 'trigger') {
       this._set(true);
-      setTimeout(() => this._set(false), 90);
+      this._noteOn();
+      setTimeout(() => { this._noteOff(); this._set(false); }, 90);
     }
   }
 
@@ -40,6 +42,8 @@ class ButtonElement {
   }
 }
 
+// ─── FaderElement ───────────────────────────────────────────────────────────
+
 class FaderElement {
   constructor(data, transport) {
     this._d = data;
@@ -50,6 +54,8 @@ class FaderElement {
   }
 
   onValueChange(cb) { this._onChange = cb; }
+
+  isActive() { return this._active; }
 
   dragStart(clientY, trackEl) {
     this._active = true;
@@ -76,11 +82,7 @@ class FaderElement {
   }
 }
 
-function mkDivider() {
-  const d = document.createElement('div');
-  d.className = 'divider';
-  return d;
-}
+// ─── Fader render ────────────────────────────────────────────────────────────
 
 export function renderFader(data, transport, ui) {
   const inst = new FaderElement(data, transport);
@@ -166,7 +168,9 @@ export function renderFader(data, transport, ui) {
   trackWrap.addEventListener('touchstart', onStart, { passive: false });
 
   // Inbound: CC from Ableton updates visual without re-emitting.
+  // Local gesture wins: игнорируем эхо, пока пользователь держит фейдер.
   const applyInput = (msg) => {
+    if (inst.isActive()) return;
     if (msg.type !== 'cc') return;
     if (msg.channel !== data.channel || msg.cc !== data.cc) return;
     if (msg.value === data.value) return;
@@ -180,14 +184,16 @@ export function renderFader(data, transport, ui) {
   };
 }
 
-export function renderButton(data, transport, variant, ui) {
+// ─── Button render ───────────────────────────────────────────────────────────
+
+export function renderButton(data, transport, ui) {
   const inst = new ButtonElement(data, transport);
 
   const wrap = document.createElement('div');
   wrap.className = 'mel';
 
   const btn = document.createElement('div');
-  btn.className = 'mbtn' + (variant ? ` mbtn--${variant}` : '');
+  btn.className = 'mbtn';
   btn.innerHTML = '<div class="mbtn-dot"></div>';
 
   const lbl = document.createElement('div');
@@ -227,17 +233,11 @@ export function renderButton(data, transport, variant, ui) {
 
   // Inbound: mirror Ableton state without re-emitting.
   const applyInput = (msg) => {
-    if (msg.channel !== data.channel || msg.note !== data.note) return;
-    const on  = msg.type === 'note_on' && msg.velocity > 0;
-    const off = msg.type === 'note_off' || (msg.type === 'note_on' && msg.velocity === 0);
-    if (on && !data.state) {
-      data.state = true;
-      btn.classList.add('is-on');
-      lbl.style.color = 'var(--accent)';
-    } else if (off && data.state) {
-      data.state = false;
-      btn.classList.remove('is-on');
-      lbl.style.color = '';
+    if (msg.type === 'note_on' && msg.note === data.note && msg.channel === data.channel) {
+      const newState = msg.velocity > 0;
+      if (newState !== data.state) { data.state = newState; inst._set(newState); }
+    } else if (msg.type === 'note_off' && msg.note === data.note && msg.channel === data.channel) {
+      if (data.state) { data.state = false; inst._set(false); }
     }
   };
 
@@ -247,65 +247,94 @@ export function renderButton(data, transport, variant, ui) {
   };
 }
 
-export function renderStrip(strip, transport, ui) {
-  const el = document.createElement('div');
-  el.className = 'strip';
+// ─── Island render ────────────────────────────────────────────────────────────
 
-  const idx = document.createElement('span');
-  idx.className = 'strip-idx';
-  idx.textContent = '01';
-  el.appendChild(idx);
+function renderIsland(elementData, transport, ui) {
+  const def = ELEMENT_DEFS[elementData.type];
 
-  const jp = document.createElement('span');
-  jp.className = 'strip-jp';
-  jp.textContent = 'チャンネル';
-  el.appendChild(jp);
+  const island = document.createElement('div');
+  island.className = 'island';
+  island.dataset.id = elementData.id;
 
-  const entries = [];
-  const mount = (r) => { el.appendChild(r.el); entries.push(...r.entries); };
+  applyIslandGeometry(island, elementData);
 
-  mount(renderFader(strip.fader, transport, ui));
-  el.appendChild(mkDivider());
-  mount(renderButton(strip.mute, transport, '', ui));
-  el.appendChild(mkDivider());
+  // Inner wrapper — padding + aspect-ratio fitting
+  const inner = document.createElement('div');
+  inner.className = 'island-inner';
+  inner.style.position = 'absolute';
+  inner.style.inset = `${def.padding.y}px ${def.padding.x}px`;
 
-  const kills = document.createElement('div');
-  kills.className = 'kill-group';
-  for (const k of [strip.killLow, strip.killMid, strip.killHi]) {
-    const r = renderButton(k, transport, 'kill', ui);
-    kills.appendChild(r.el);
-    entries.push(...r.entries);
-  }
-  el.appendChild(kills);
+  let rendered;
+  if (elementData.type === 'fader')  rendered = renderFader(elementData, transport, ui);
+  if (elementData.type === 'button') rendered = renderButton(elementData, transport, ui);
 
-  el.appendChild(mkDivider());
-  mount(renderButton(strip.impulse, transport, 'momentary', ui));
+  if (!rendered) return null;
 
-  const lbl = document.createElement('div');
-  lbl.className = 'strip-lbl';
-  lbl.textContent = strip.label;
-  el.appendChild(lbl);
+  const el = rendered.el;
+  el.style.width  = '100%';
+  el.style.height = '100%';
 
-  return { el, entries };
+  inner.appendChild(el);
+  island.appendChild(inner);
+
+  return { island, entries: rendered.entries };
 }
+
+export function applyIslandGeometry(island, data) {
+  island.style.left   = gridToPx(data.gridX) + 'px';
+  island.style.top    = gridToPx(data.gridY) + 'px';
+  island.style.width  = gridToPx(data.gridW) + 'px';
+  island.style.height = gridToPx(data.gridH) + 'px';
+}
+
+// ─── Canvas ───────────────────────────────────────────────────────────────────
 
 export function renderCanvas(rootEl, layout, transport, ui) {
   rootEl.innerHTML = '';
-  const routing = new Map();
-  for (const strip of layout.strips) {
-    const { el, entries } = renderStrip(strip, transport, ui);
-    rootEl.appendChild(el);
-    for (const [key, fn] of entries) routing.set(key, fn);
+  rootEl.style.position = 'relative';
+
+  const routingMap = new Map();
+
+  function mountElement(elementData) {
+    const result = renderIsland(elementData, transport, ui);
+    if (!result) return;
+    const { island, entries } = result;
+    rootEl.appendChild(island);
+    for (const [key, fn] of entries) routingMap.set(key, fn);
+    return island;
   }
+
+  function unmountElement(id) {
+    const el = rootEl.querySelector(`.island[data-id="${id}"]`);
+    if (el) el.remove();
+    // Clean up routing entries for this element
+    for (const [key] of routingMap) {
+      if (key.includes(':')) {
+        // Re-check: routing entries don't store id, so we rebuild map on full refresh
+      }
+    }
+  }
+
+  function refresh(layout) {
+    rootEl.innerHTML = '';
+    routingMap.clear();
+    for (const el of layout.elements) mountElement(el);
+  }
+
+  // Initial render
+  refresh(layout);
+
   return {
     dispatch(msg) {
       if (!msg) return;
-      let key;
-      if (msg.type === 'cc') key = `cc:${msg.channel}:${msg.cc}`;
-      else if (msg.type === 'note_on' || msg.type === 'note_off') key = `note:${msg.channel}:${msg.note}`;
-      else return;
-      const fn = routing.get(key);
-      if (fn) fn(msg);
+      const key = msg.type === 'cc'
+        ? `cc:${msg.channel}:${msg.cc}`
+        : `note:${msg.channel}:${msg.note}`;
+      const handler = routingMap.get(key);
+      if (handler) handler(msg);
     },
+    refresh,
+    mountElement,
+    unmountElement,
   };
 }
