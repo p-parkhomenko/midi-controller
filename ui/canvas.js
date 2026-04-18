@@ -125,7 +125,7 @@ export function renderFader(data, transport, ui) {
   function updateVisual(value) {
     const pct = (value / 127) * 100;
     fillEl.style.height   = pct + '%';
-    handleEl.style.bottom = `calc(${pct}% - 6px)`;
+    handleEl.style.bottom = pct + '%';
     valEl.textContent     = String(value).padStart(3, '0');
   }
 
@@ -247,6 +247,153 @@ export function renderButton(data, transport, ui) {
   };
 }
 
+// ─── XYElement ──────────────────────────────────────────────────────────────
+
+class XYElement {
+  constructor(data, transport) {
+    this._d = data;
+    this._t = transport;
+    this._onChange = null;
+    this._active = false;
+    this._rect = null;
+  }
+
+  onValueChange(cb) { this._onChange = cb; }
+
+  isActive() { return this._active; }
+
+  dragStart(clientX, clientY, padEl) {
+    this._active = true;
+    this._rect = padEl.getBoundingClientRect();
+    this._calc(clientX, clientY);
+  }
+
+  dragMove(clientX, clientY) {
+    if (!this._active) return;
+    this._calc(clientX, clientY);
+  }
+
+  dragEnd() { this._active = false; }
+
+  _calc(clientX, clientY) {
+    const rx = Math.max(0, Math.min(1, (clientX - this._rect.left) / this._rect.width));
+    const ry = 1 - Math.max(0, Math.min(1, (clientY - this._rect.top) / this._rect.height));
+    const vx = Math.round(rx * 127);
+    const vy = Math.round(ry * 127);
+    const changedX = vx !== this._d.valueX;
+    const changedY = vy !== this._d.valueY;
+    if (!changedX && !changedY) return;
+    if (changedX) {
+      this._d.valueX = vx;
+      this._t.send({ type: 'cc', channel: this._d.channel, cc: this._d.ccX, value: vx });
+    }
+    if (changedY) {
+      this._d.valueY = vy;
+      this._t.send({ type: 'cc', channel: this._d.channel, cc: this._d.ccY, value: vy });
+    }
+    if (this._onChange) this._onChange(this._d.valueX, this._d.valueY);
+  }
+}
+
+// ─── XY render ──────────────────────────────────────────────────────────────
+
+export function renderXY(data, transport, ui) {
+  const inst = new XYElement(data, transport);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'xy';
+  wrap.innerHTML = `
+    <div class="xy-top">
+      <div class="xy-val">X:064 Y:064</div>
+      <div class="xy-lbl">${data.label.toUpperCase()}</div>
+    </div>
+    <div class="xy-pad">
+      <div class="xy-cross xy-cross--h"></div>
+      <div class="xy-cross xy-cross--v"></div>
+      <div class="xy-dot"></div>
+    </div>
+  `;
+
+  const padEl  = wrap.querySelector('.xy-pad');
+  const dotEl  = wrap.querySelector('.xy-dot');
+  const crossH = wrap.querySelector('.xy-cross--h');
+  const crossV = wrap.querySelector('.xy-cross--v');
+  const valEl  = wrap.querySelector('.xy-val');
+
+  function updateVisual(vx, vy) {
+    const px = (vx / 127) * 100;
+    const py = (1 - vy / 127) * 100;
+    dotEl.style.left = px + '%';
+    dotEl.style.top  = py + '%';
+    crossV.style.left = px + '%';
+    crossH.style.top  = py + '%';
+    valEl.textContent =
+      `X:${String(vx).padStart(3,'0')} Y:${String(vy).padStart(3,'0')}`;
+  }
+
+  inst.onValueChange((vx, vy) => {
+    updateVisual(vx, vy);
+    ui.showVal(`${String(vx).padStart(3,'0')}·${String(vy).padStart(3,'0')}`,
+               `${data.label.toUpperCase()} · CC ${data.ccX}/${data.ccY}`);
+    ui.pulseStart();
+  });
+
+  updateVisual(data.valueX, data.valueY);
+
+  const onStart = (e) => {
+    e.preventDefault();
+    const x = e.touches ? e.touches[0].clientX : e.clientX;
+    const y = e.touches ? e.touches[0].clientY : e.clientY;
+    inst.dragStart(x, y, padEl);
+    wrap.classList.add('is-dragging');
+
+    const onMove = (e) => {
+      e.preventDefault();
+      const mx = e.touches ? e.touches[0].clientX : e.clientX;
+      const my = e.touches ? e.touches[0].clientY : e.clientY;
+      inst.dragMove(mx, my);
+    };
+    const onEnd = () => {
+      inst.dragEnd();
+      wrap.classList.remove('is-dragging');
+      ui.hideVal();
+      ui.pulseEnd();
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup',   onEnd);
+      document.removeEventListener('touchmove', onMove);
+      document.removeEventListener('touchend',  onEnd);
+    };
+
+    document.addEventListener('mousemove', onMove, { passive: false });
+    document.addEventListener('mouseup',   onEnd);
+    document.addEventListener('touchmove', onMove, { passive: false });
+    document.addEventListener('touchend',  onEnd);
+  };
+
+  padEl.addEventListener('mousedown',  onStart);
+  padEl.addEventListener('touchstart', onStart, { passive: false });
+
+  const applyInput = (msg) => {
+    if (inst.isActive()) return;
+    if (msg.type !== 'cc' || msg.channel !== data.channel) return;
+    if (msg.cc === data.ccX && msg.value !== data.valueX) {
+      data.valueX = msg.value;
+      updateVisual(data.valueX, data.valueY);
+    } else if (msg.cc === data.ccY && msg.value !== data.valueY) {
+      data.valueY = msg.value;
+      updateVisual(data.valueX, data.valueY);
+    }
+  };
+
+  return {
+    el: wrap,
+    entries: [
+      [`cc:${data.channel}:${data.ccX}`, applyInput],
+      [`cc:${data.channel}:${data.ccY}`, applyInput],
+    ],
+  };
+}
+
 // ─── Island render ────────────────────────────────────────────────────────────
 
 function renderIsland(elementData, transport, ui) {
@@ -267,6 +414,7 @@ function renderIsland(elementData, transport, ui) {
   let rendered;
   if (elementData.type === 'fader')  rendered = renderFader(elementData, transport, ui);
   if (elementData.type === 'button') rendered = renderButton(elementData, transport, ui);
+  if (elementData.type === 'xy')     rendered = renderXY(elementData, transport, ui);
 
   if (!rendered) return null;
 
