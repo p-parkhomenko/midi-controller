@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>MIDI CTRL — Phase 1</title>
+<title>MIDI CTRL</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Share+Tech+Mono&family=Orbitron:wght@400;500;600;700;800;900&family=Bitcount+Grid+Single:wght@100..900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="design-system/tokens.css">
@@ -23,14 +23,14 @@
   <div class="bg-pulse" id="bgPulse"></div>
 
   <div class="anno anno--tl">SYS:WEBMIDI/1.0<br>PROTOCOL:RTP</div>
-  <div class="anno anno--tr">LAYOUT:FIXED<br>GRID:24×24</div>
+  <div class="anno anno--tr">LAYOUT:DYNAMIC<br>GRID:22×22</div>
   <div class="anno anno--bl">CC:070-119<br>NOTE:036-127</div>
   <div class="anno anno--br">DEVICE:001<br>CH:01/16</div>
 
   <header class="hdr">
     <div class="logo">
       <span class="logo-mark">MIDI<span class="logo-dot">·</span>CTRL</span>
-      <span class="logo-sub">PHASE·1</span>
+      <span class="logo-sub">PHASE·2</span>
       <span class="logo-jp">コントローラ</span>
     </div>
     <div class="hdr-center">
@@ -53,6 +53,15 @@
 
   <main class="cvs" id="canvas"></main>
 
+  <!-- Mode control: bottom-left, always visible -->
+  <div class="mode-control" id="modeControl">
+    <div class="segmented" id="modeSegmented">
+      <button class="seg-btn is-active" data-mode="play">Play</button>
+      <button class="seg-btn" data-mode="edit">Edit</button>
+    </div>
+    <button class="add-btn" id="addBtn" aria-label="Add element">+</button>
+  </div>
+
   <footer class="ftr">
     <div class="log" id="log">— READY —</div>
     <div class="ftr-jp">出力</div>
@@ -64,6 +73,8 @@
     </div>
   </footer>
 </div>
+
+<!-- Drawer and toast are injected by JS -->
 
 <div class="midi-overlay hidden" id="midiOverlay">
   <div class="midi-overlay-card">
@@ -78,10 +89,15 @@
 </div>
 
 <script type="module">
-import MIDITransport from './core/transport.js';
-import { layout }    from './core/layout.js';
+import MIDITransport   from './core/transport.js';
+import { layout, addElement, removeElement, updateElement, duplicateElement, saveLayout }
+                       from './core/layout.js';
 import { renderCanvas } from './ui/canvas.js';
+import { activateEditMode } from './ui/editMode.js';
+import { createDrawer } from './ui/drawer.js';
+import { showToast }   from './ui/toast.js';
 
+// ── DOM refs ────────────────────────────────────────────────────────────────
 const transport  = new MIDITransport();
 const canvasEl   = document.getElementById('canvas');
 const connDot    = document.getElementById('connDot');
@@ -95,9 +111,12 @@ const valOverlay = document.getElementById('valOverlay');
 const valNumEl   = document.getElementById('valNum');
 const valHintEl  = document.getElementById('valHint');
 const overlay    = document.getElementById('midiOverlay');
+const modeSegmented = document.getElementById('modeSegmented');
+const addBtn     = document.getElementById('addBtn');
 
 let hideT = null, pulseT = null, actT = null, rxT = null, logT = null;
 
+// ── UI helpers ───────────────────────────────────────────────────────────────
 const ui = {
   showVal(v, hint) {
     valNumEl.textContent  = typeof v === 'number' ? String(v).padStart(3, '0') : v;
@@ -119,8 +138,117 @@ const ui = {
   },
 };
 
+// ── Canvas ───────────────────────────────────────────────────────────────────
 const canvasApi = renderCanvas(canvasEl, layout, transport, ui);
 
+// ── Drawer ───────────────────────────────────────────────────────────────────
+const drawer = createDrawer(document.querySelector('.scene'));
+
+function openElementDrawer(elementData) {
+  drawer.openElement(elementData, {
+    onSave(patch) {
+      updateElement(layout, elementData.id, patch);
+      // Refresh canvas to reflect label/CC changes
+      canvasApi.refresh(layout);
+      if (currentMode === 'edit') reactivateEditMode();
+    },
+    onDelete() {
+      const snapshot = { ...elementData };
+      removeElement(layout, elementData.id);
+      canvasApi.refresh(layout);
+      if (currentMode === 'edit') reactivateEditMode();
+      showToast('Element deleted', () => {
+        layout.elements.push(snapshot);
+        saveLayout(layout);
+        canvasApi.refresh(layout);
+        if (currentMode === 'edit') reactivateEditMode();
+      });
+    },
+    onDuplicate() {
+      duplicateElement(layout, elementData.id);
+      canvasApi.refresh(layout);
+      if (currentMode === 'edit') reactivateEditMode();
+    },
+  });
+
+  // Zoom-focus: shift canvas so selected island is center-left
+  focusIsland(elementData.id);
+}
+
+function focusIsland(id) {
+  const island = canvasEl.querySelector(`.island[data-id="${id}"]`);
+  if (!island) return;
+  const drawerW = 340;
+  const rect = island.getBoundingClientRect();
+  const targetX = (window.innerWidth - drawerW) / 2 - rect.width / 2;
+  const targetY = window.innerHeight / 2 - rect.height / 2;
+  const dx = targetX - rect.left;
+  const dy = targetY - rect.top;
+  canvasEl.style.transition = 'transform 200ms ease-out';
+  canvasEl.style.transform  = `translate(${dx}px, ${dy}px) scale(1.04)`;
+}
+
+function unfocusCanvas() {
+  canvasEl.style.transition = 'transform 200ms ease-out';
+  canvasEl.style.transform  = '';
+}
+
+// ── Mode switching ────────────────────────────────────────────────────────────
+let currentMode      = 'play';
+let deactivateEdit   = null;
+
+function reactivateEditMode() {
+  if (deactivateEdit) { deactivateEdit(); deactivateEdit = null; }
+  deactivateEdit = activateEditMode(canvasEl, layout, {
+    onTap(elementData) {
+      if (!elementData) {
+        drawer.close();
+        unfocusCanvas();
+      } else {
+        openElementDrawer(elementData);
+      }
+    },
+  });
+}
+
+function setMode(mode) {
+  currentMode = mode;
+
+  modeSegmented.querySelectorAll('.seg-btn').forEach(btn => {
+    btn.classList.toggle('is-active', btn.dataset.mode === mode);
+  });
+
+  addBtn.style.display = mode === 'edit' ? '' : 'none';
+
+  if (mode === 'edit') {
+    canvasEl.classList.add('is-edit');
+    reactivateEditMode();
+  } else {
+    canvasEl.classList.remove('is-edit');
+    if (deactivateEdit) { deactivateEdit(); deactivateEdit = null; }
+    drawer.close();
+    unfocusCanvas();
+  }
+}
+
+modeSegmented.querySelectorAll('.seg-btn').forEach(btn => {
+  btn.addEventListener('click', () => setMode(btn.dataset.mode));
+});
+
+// ── Add element ───────────────────────────────────────────────────────────────
+addBtn.addEventListener('click', () => {
+  drawer.openPalette((type) => {
+    const newEl = addElement(layout, type);
+    canvasApi.refresh(layout);
+    reactivateEditMode();
+    openElementDrawer(newEl);
+  });
+});
+
+// Init: start in Play mode, add-btn hidden
+setMode('play');
+
+// ── MIDI transport ────────────────────────────────────────────────────────────
 transport.onActivity((msg) => {
   actLed.classList.add('on');
   clearTimeout(actT);
@@ -149,13 +277,13 @@ transport.onMessage((msg) => {
   canvasApi.dispatch(msg);
 });
 
+// ── MIDI connection ───────────────────────────────────────────────────────────
 function setStatus(text, state, duplex) {
   const prefix = duplex ? '⇄ ' : (state === 'connected' ? '→ ' : '');
   connText.textContent = prefix + text;
   connDot.className = 'conn-dot' + (state ? ` ${state}` : '');
 }
 
-// Auto-match input port by name when output is selected.
 function matchInputByName(name, inputs) {
   return inputs.find(p => p.name === name) ?? null;
 }
@@ -200,7 +328,6 @@ async function connectMIDI() {
     populatePorts(outputs);
     transport.onOutputPortsChange(populatePorts);
     transport.onInputPortsChange(() => {
-      // If current output has a new matching input, hook it up.
       const selectedOutId = portSelect.value;
       if (selectedOutId) applySelection(selectedOutId);
     });
