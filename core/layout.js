@@ -2,17 +2,22 @@ const STORAGE_KEY = 'midi-controller-layout';
 
 export const ELEMENT_DEFS = {
   fader: {
-    preserveAspectRatio: true,
-    aspectRatio: 1 / 4,          // width / height
-    padding: { x: 12, y: 16 },
+    preserveAspectRatio: false,
+    padding: { x: 8, y: 12 },
     defaultW: 4, defaultH: 14,
-    minW: 2, minH: 8,
+    minW: 2, minH: 6,
   },
   button: {
     preserveAspectRatio: false,
     padding: { x: 8, y: 8 },
     defaultW: 3, defaultH: 3,
     minW: 2, minH: 2,
+  },
+  xy: {
+    preserveAspectRatio: false,
+    padding: { x: 8, y: 8 },
+    defaultW: 8, defaultH: 8,
+    minW: 4, minH: 4,
   },
 };
 
@@ -55,6 +60,13 @@ export function addElement(layout, type) {
       note: layout._nextNote++, channel: 1, state: false, mode: 'toggle', label: 'BTN',
       gridX: x, gridY: y, gridW: def.defaultW, gridH: def.defaultH,
     };
+  } else if (type === 'xy') {
+    el = {
+      id: uuid(), type: 'xy',
+      ccX: layout._nextCC++, ccY: layout._nextCC++,
+      channel: 1, valueX: 64, valueY: 64, label: 'XY',
+      gridX: x, gridY: y, gridW: def.defaultW, gridH: def.defaultH,
+    };
   }
 
   layout.elements.push(el);
@@ -86,6 +98,7 @@ export function duplicateElement(layout, id) {
   const clone = { ...src, id: uuid(), gridX: x, gridY: y };
   if (src.type === 'fader')  clone.cc   = layout._nextCC++;
   if (src.type === 'button') clone.note = layout._nextNote++;
+  if (src.type === 'xy')     { clone.ccX = layout._nextCC++; clone.ccY = layout._nextCC++; }
 
   layout.elements.push(clone);
   saveLayout(layout);

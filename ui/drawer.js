@@ -54,6 +54,16 @@ export function createDrawer(containerEl) {
           <input type="number" name="cc" value="${data.cc}" min="70" max="119">
         </label>
         ` : ''}
+        ${data.type === 'xy' ? `
+        <label class="drawer-field">
+          <span>CC X</span>
+          <input type="number" name="ccX" value="${data.ccX}" min="70" max="119">
+        </label>
+        <label class="drawer-field">
+          <span>CC Y</span>
+          <input type="number" name="ccY" value="${data.ccY}" min="70" max="119">
+        </label>
+        ` : ''}
         ${data.type === 'button' ? `
         <label class="drawer-field">
           <span>Note#</span>
@@ -111,7 +121,7 @@ export function createDrawer(containerEl) {
   }
 
   // ── Palette ───────────────────────────────────────────────────────────────
-  function openPalette(onSelect) {
+  function openPalette(onSelect, onClearAll) {
     const frag = document.createElement('div');
     frag.className = 'drawer-content';
 
@@ -129,6 +139,13 @@ export function createDrawer(containerEl) {
           <div class="palette-icon palette-icon--button"></div>
           <span>Button</span>
         </button>
+        <button class="palette-item" data-type="xy">
+          <div class="palette-icon palette-icon--xy"></div>
+          <span>XY Pad</span>
+        </button>
+      </div>
+      <div class="drawer-actions" style="margin-top:auto">
+        <button class="drawer-btn drawer-btn--danger" data-action="clear">Clear all</button>
       </div>
     `;
 
@@ -137,8 +154,12 @@ export function createDrawer(containerEl) {
     frag.querySelectorAll('[data-type]').forEach(btn => {
       btn.addEventListener('click', () => {
         onSelect(btn.dataset.type);
-        // Drawer will be repopulated with element editor by caller
       });
+    });
+
+    frag.querySelector('[data-action="clear"]').addEventListener('click', () => {
+      if (onClearAll) onClearAll();
+      close();
     });
 
     show(frag);

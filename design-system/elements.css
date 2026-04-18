@@ -19,12 +19,18 @@ html, body {
   background: var(--bg);
 }
 
-/* ── DOT BACKGROUND ── */
-.dot-bg {
+/* Dots live on .cvs — same 22px grid origin in play and edit. */
+.dot-bg { display: none; }
+/* Edit mode: add orange grid lines on top of the base dots. */
+.scene.is-edit .cvs::before {
+  content: '';
   position: absolute; inset: 0;
-  pointer-events: none; z-index: 0;
-  background-image: radial-gradient(circle, rgba(255,255,255,0.07) 1px, transparent 1px);
-  background-size: 20px 20px;
+  pointer-events: none; z-index: 1;
+  background-image:
+    linear-gradient(rgba(255,77,0,0.10) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,77,0,0.10) 1px, transparent 1px);
+  background-size: 22px 22px;
+  background-position: 0 0;
 }
 
 /* ── SCANLINES ── */
@@ -244,11 +250,19 @@ html, body {
   position: relative; z-index: 2;
   overflow: hidden;
   transform-origin: top left;
+  isolation: isolate;
+  background-image: radial-gradient(circle, rgba(255,255,255,0.18) 1px, transparent 1px);
+  background-size: 22px 22px;
+  background-position: -11px -11px;
 }
 
 /* ── ISLAND ── */
 .island {
   position: absolute;
+  background: rgba(8,8,8,0.65);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255,255,255,0.07);
   transition: left 80ms ease, top 80ms ease, width 80ms ease, height 80ms ease;
 }
 .island.is-dragging {
@@ -260,34 +274,33 @@ html, body {
   display: flex; align-items: center; justify-content: center;
 }
 
-/* Edit mode: overlay on every island */
+/* Edit mode: overlay on every island — accent tint, blocks MIDI interactions */
 .island-overlay {
   position: absolute; inset: 0;
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.18);
+  background: rgba(255,77,0,0.12);
+  border: 1px solid rgba(255,77,0,0.35);
   pointer-events: none;
   z-index: 10;
 }
+/* Block MIDI interactions on element content in edit mode */
+.island.is-edit .island-inner {
+  pointer-events: none;
+}
 
-/* Corner resize handles */
+/* Corner resize handles — squares inside the island */
 .island-handle {
   position: absolute;
-  width: 12px; height: 12px;
-  border-radius: 50%;
-  background: #fff;
-  border: 1.5px solid rgba(255,77,0,0.8);
+  width: 14px; height: 14px;
+  background: rgba(255,77,0,0.9);
+  border: 1px solid rgba(255,255,255,0.4);
   z-index: 20;
-  /* Extend touch area with padding trick */
-  padding: 16px;
-  margin: -16px;
-  background-clip: content-box;
   cursor: pointer;
   touch-action: none;
 }
-.island-handle--tl { top: 0;   left: 0;  }
-.island-handle--tr { top: 0;   right: 0; }
-.island-handle--bl { bottom: 0; left: 0; }
-.island-handle--br { bottom: 0; right: 0; }
+.island-handle--tl { top: 4px;    left: 4px;   }
+.island-handle--tr { top: 4px;    right: 4px;  }
+.island-handle--bl { bottom: 4px; left: 4px;   }
+.island-handle--br { bottom: 4px; right: 4px;  }
 
 /* ── MODE CONTROL — bottom-left ── */
 .mode-control {
@@ -336,11 +349,13 @@ html, body {
   background: rgba(255,77,0,0.85);
   border: none;
   color: #fff;
-  font-size: 18px; line-height: 1;
+  font-size: 20px; line-height: 1;
+  align-items: center; justify-content: center;
   cursor: pointer;
   box-shadow: 0 2px 10px rgba(255,77,0,0.4);
   transition: transform 80ms ease, box-shadow 80ms ease;
   -webkit-tap-highlight-color: transparent;
+  padding-bottom: 1px; /* optical centre for + */
 }
 .add-btn:active { transform: scale(0.92); }
 
@@ -470,6 +485,13 @@ html, body {
 .palette-icon--button {
   background: rgba(255,255,255,0.2);
   border: 1px solid rgba(255,255,255,0.3);
+}
+.palette-icon--xy {
+  border: 1px solid rgba(255,255,255,0.3);
+  background:
+    radial-gradient(circle, var(--accent) 2px, transparent 2.5px) center/100% 100% no-repeat,
+    linear-gradient(rgba(255,255,255,0.2) 1px, transparent 1px) center/100% 50% no-repeat,
+    linear-gradient(90deg, rgba(255,255,255,0.2) 1px, transparent 1px) center/50% 100% no-repeat;
 }
 
 /* ── TOAST ── */
@@ -646,7 +668,67 @@ html, body {
 }
 
 /* ── BUTTONS ── */
-.mel { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.mel { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+
+/* Inside an island: fill available space */
+.island-inner .mel  { width: 100%; height: 100%; }
+.island-inner .mbtn { width: 100%; height: 100%; max-width: none; max-height: none; }
+
+.island-inner .fader      { width: auto; height: 100%; }
+.island-inner .fader-wrap { width: 48px; flex: 1; height: auto; min-height: 0; }
+.island-inner .fader-track { height: 100%; }
+
+/* ── XY PAD ── */
+.xy {
+  width: 100%; height: 100%;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.xy-top {
+  display: flex; justify-content: space-between; align-items: center;
+  font-family: var(--font-mono);
+  font-size: 8px; letter-spacing: 0.12em;
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+.xy-val {
+  color: var(--accent);
+  font-family: var(--font-display, var(--font-mono));
+  font-size: 11px; letter-spacing: 0.08em;
+}
+.xy-lbl { color: var(--text-dim); }
+
+.xy-pad {
+  flex: 1;
+  position: relative;
+  border: 1px solid rgba(255,255,255,0.10);
+  background:
+    linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px) 0 0 / 100% 25%,
+    linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px) 0 0 / 25% 100%,
+    rgba(0,0,0,0.35);
+  overflow: hidden;
+  touch-action: none;
+  cursor: crosshair;
+}
+.xy-cross {
+  position: absolute;
+  background: rgba(255,77,0,0.35);
+  pointer-events: none;
+  transition: top 0.03s linear, left 0.03s linear;
+}
+.xy-cross--h { left: 0; right: 0; height: 1px; }
+.xy-cross--v { top: 0; bottom: 0; width: 1px; }
+.xy-dot {
+  position: absolute;
+  width: 14px; height: 14px;
+  background: var(--accent);
+  border: 2px solid rgba(255,255,255,0.9);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 12px rgba(255,77,0,0.6);
+  pointer-events: none;
+  transition: top 0.03s linear, left 0.03s linear;
+}
+.xy.is-dragging .xy-dot { transform: translate(-50%, -50%) scale(1.15); }
 
 .blbl {
   font-family: var(--font-mono);

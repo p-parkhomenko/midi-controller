@@ -148,7 +148,6 @@ function openElementDrawer(elementData) {
   drawer.openElement(elementData, {
     onSave(patch) {
       updateElement(layout, elementData.id, patch);
-      // Refresh canvas to reflect label/CC changes
       canvasApi.refresh(layout);
       if (currentMode === 'edit') reactivateEditMode();
     },
@@ -170,27 +169,6 @@ function openElementDrawer(elementData) {
       if (currentMode === 'edit') reactivateEditMode();
     },
   });
-
-  // Zoom-focus: shift canvas so selected island is center-left
-  focusIsland(elementData.id);
-}
-
-function focusIsland(id) {
-  const island = canvasEl.querySelector(`.island[data-id="${id}"]`);
-  if (!island) return;
-  const drawerW = 340;
-  const rect = island.getBoundingClientRect();
-  const targetX = (window.innerWidth - drawerW) / 2 - rect.width / 2;
-  const targetY = window.innerHeight / 2 - rect.height / 2;
-  const dx = targetX - rect.left;
-  const dy = targetY - rect.top;
-  canvasEl.style.transition = 'transform 200ms ease-out';
-  canvasEl.style.transform  = `translate(${dx}px, ${dy}px) scale(1.04)`;
-}
-
-function unfocusCanvas() {
-  canvasEl.style.transition = 'transform 200ms ease-out';
-  canvasEl.style.transform  = '';
 }
 
 // ── Mode switching ────────────────────────────────────────────────────────────
@@ -203,7 +181,6 @@ function reactivateEditMode() {
     onTap(elementData) {
       if (!elementData) {
         drawer.close();
-        unfocusCanvas();
       } else {
         openElementDrawer(elementData);
       }
@@ -218,16 +195,18 @@ function setMode(mode) {
     btn.classList.toggle('is-active', btn.dataset.mode === mode);
   });
 
-  addBtn.style.display = mode === 'edit' ? '' : 'none';
+  addBtn.style.display = mode === 'edit' ? 'flex' : 'none';
 
+  const sceneEl = document.querySelector('.scene');
   if (mode === 'edit') {
     canvasEl.classList.add('is-edit');
+    sceneEl.classList.add('is-edit');
     reactivateEditMode();
   } else {
     canvasEl.classList.remove('is-edit');
+    sceneEl.classList.remove('is-edit');
     if (deactivateEdit) { deactivateEdit(); deactivateEdit = null; }
     drawer.close();
-    unfocusCanvas();
   }
 }
 
@@ -237,12 +216,23 @@ modeSegmented.querySelectorAll('.seg-btn').forEach(btn => {
 
 // ── Add element ───────────────────────────────────────────────────────────────
 addBtn.addEventListener('click', () => {
-  drawer.openPalette((type) => {
-    const newEl = addElement(layout, type);
-    canvasApi.refresh(layout);
-    reactivateEditMode();
-    openElementDrawer(newEl);
-  });
+  drawer.openPalette(
+    (type) => {
+      const newEl = addElement(layout, type);
+      canvasApi.refresh(layout);
+      reactivateEditMode();
+      openElementDrawer(newEl);
+    },
+    () => {
+      layout.elements = [];
+      layout._nextCC   = 70;
+      layout._nextNote = 36;
+      saveLayout(layout);
+      canvasApi.refresh(layout);
+      if (deactivateEdit) { deactivateEdit(); deactivateEdit = null; }
+      reactivateEditMode();
+    }
+  );
 });
 
 // Init: start in Play mode, add-btn hidden
